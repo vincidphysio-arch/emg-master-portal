@@ -40,11 +40,12 @@ def get_data(sheet_name):
 def main():
     st.set_page_config(page_title="London Tracker", layout="wide")
     
-    # --- SIDEBAR: NAVIGATION ---
     if st.sidebar.button("⬅️ Back to Home"):
         st.switch_page("Home.py")
         
-    # --- SIDEBAR: DOCTOR SELECTOR ---
+    st.title("🏙️ London, ON Patient Tracker")
+
+    # --- DOCTOR SELECTOR ---
     st.sidebar.header("👨‍⚕️ Select Doctor")
     selected_doc_name = st.sidebar.selectbox("Choose Dashboard:", list(DOCTOR_SHEETS.keys()))
     target_sheet = DOCTOR_SHEETS[selected_doc_name]
@@ -53,15 +54,12 @@ def main():
         st.cache_data.clear()
         st.rerun()
 
-    # --- LOAD DATA ---
     try:
         data = get_data(target_sheet)
         df = pd.DataFrame(data)
     except Exception as e:
         st.error(f"Error reading sheet: {e}")
         st.stop()
-
-    st.title("🏙️ London, ON Patient Tracker")
 
     if not df.empty:
         # 1. CLEAN DATA
@@ -93,33 +91,34 @@ def main():
         # 3. TIME COLUMNS
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
-        df['Month_Year'] = df['Date Object'].dt.strftime('%B %Y')
-
+        
         # --- SIDEBAR: TIME FILTERS ---
         st.sidebar.header("📅 Time Filters")
         
-        # Year Selector
         available_years = sorted(df['Year'].unique(), reverse=True)
         selected_year = st.sidebar.selectbox("Select Year", available_years)
-        
-        # Filter Data to Year
         year_df = df[df['Year'] == selected_year]
 
-        # Month Selector (MOVED TO SIDEBAR)
+        # --- MONTH SORTING (DESCENDING) ---
         available_months = list(year_df['Month_Name'].unique())
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-        available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99)
+        # Reverse=True makes it Dec -> Jan
+        available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
         view_options = ["All Months"] + available_months
-        selected_month_view = st.sidebar.selectbox("Select Month", view_options)
+        
+        # Auto-select Current Month if available
+        current_month_name = datetime.now().strftime('%B')
+        default_idx = 0
+        if current_month_name in available_months:
+            default_idx = view_options.index(current_month_name)
+            
+        selected_month_view = st.sidebar.selectbox("Select Month", view_options, index=default_idx)
 
         # --- MAIN PAGE: METRICS ---
-        
-        # Calculate Yearly Totals
         year_total = year_df['Fee'].sum()
         year_patients = len(year_df)
         
-        # Display Yearly Metrics
         ym1, ym2, ym3 = st.columns(3)
         ym1.metric(f"Total London Income ({selected_year})", f"${year_total:,.2f}")
         ym2.metric("Total Patients (Year)", f"{year_patients}")
@@ -128,19 +127,13 @@ def main():
         st.divider()
 
         # --- MONTHLY DETAILS ---
-        
-        # Filter Logic based on Sidebar Selection
         if selected_month_view == "All Months":
             display_df = year_df
             view_title = f"All Activity in {selected_year}"
-            
-            # Show simple table for full year
             month_total = display_df['Fee'].sum()
             st.subheader(f"🗓️ {view_title}")
             st.markdown(f"**Total: ${month_total:,.2f}**")
-            
         else:
-            # Show "Pay Period" breakdown for specific month
             display_df = year_df[year_df['Month_Name'] == selected_month_view]
             view_title = f"Details for {selected_month_view} {selected_year}"
             
@@ -163,7 +156,6 @@ def main():
             use_container_width=True, 
             hide_index=True
         )
-        
     else:
         st.info("No data found.")
 
