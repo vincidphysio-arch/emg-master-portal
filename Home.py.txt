@@ -1,0 +1,20 @@
+import streamlit as st
+
+st.set_page_config(page_title="EMG Portal", page_icon="🏥", layout="wide")
+
+st.title("🏥 EMG Business Portal")
+st.write("Select a location to view dashboard:")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.header("🇬🇧 London")
+    st.write("Patient Tracker & Earnings")
+    if st.button("Go to London Dashboard", type="primary"):
+        st.switch_page("pages/1_London_Tracker.py")
+
+with col2:
+    st.header("🇨🇦 Kitchener")
+    st.write("Interac Payments & Doctors")
+    if st.button("Go to Kitchener Dashboard", type="primary"):
+        st.switch_page("pages/2_Kitchener_Finance.py")
