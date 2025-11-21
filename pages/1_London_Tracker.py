@@ -7,7 +7,6 @@ from datetime import datetime
 # --- 🏥 DOCTOR CONFIGURATION ---
 DOCTOR_SHEETS = {
     "Dr. Tugolov": "Tugolov combined questionnaire(Responses)",
-    # "Dr. Smith": "Smith Sheet Name"
 }
 
 CREDENTIALS_FILE = 'credentials.json'
@@ -45,7 +44,6 @@ def main():
         
     st.title("🏙️ London, ON Patient Tracker")
 
-    # --- DOCTOR SELECTOR ---
     st.sidebar.header("👨‍⚕️ Select Doctor")
     selected_doc_name = st.sidebar.selectbox("Choose Dashboard:", list(DOCTOR_SHEETS.keys()))
     target_sheet = DOCTOR_SHEETS[selected_doc_name]
@@ -92,30 +90,26 @@ def main():
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
         
-        # --- SIDEBAR: TIME FILTERS ---
+        # --- SIDEBAR ---
         st.sidebar.header("📅 Time Filters")
-        
         available_years = sorted(df['Year'].unique(), reverse=True)
         selected_year = st.sidebar.selectbox("Select Year", available_years)
         year_df = df[df['Year'] == selected_year]
 
-        # --- MONTH SORTING (DESCENDING) ---
         available_months = list(year_df['Month_Name'].unique())
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-        # Reverse=True makes it Dec -> Jan
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
         view_options = ["All Months"] + available_months
         
-        # Auto-select Current Month if available
         current_month_name = datetime.now().strftime('%B')
         default_idx = 0
         if current_month_name in available_months:
-            default_idx = view_options.index(current_month_name)
+            default_idx = view_options.index(current_month_name) + 1
             
-        selected_month_view = st.sidebar.selectbox("Select Month", view_options, index=default_idx)
+        selected_month_view = st.sidebar.selectbox("Select Month", view_options, index=default_idx if current_month_name in available_months else 0)
 
-        # --- MAIN PAGE: METRICS ---
+        # --- YEARLY METRICS ---
         year_total = year_df['Fee'].sum()
         year_patients = len(year_df)
         
@@ -131,8 +125,10 @@ def main():
             display_df = year_df
             view_title = f"All Activity in {selected_year}"
             month_total = display_df['Fee'].sum()
-            st.subheader(f"🗓️ {view_title}")
-            st.markdown(f"**Total: ${month_total:,.2f}**")
+            
+            st.markdown(f"<h2 style='text-align: center;'>{view_title}</h2>", unsafe_allow_html=True)
+            st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${month_total:,.2f}</h1>", unsafe_allow_html=True)
+            
         else:
             display_df = year_df[year_df['Month_Name'] == selected_month_view]
             view_title = f"Details for {selected_month_view} {selected_year}"
@@ -140,12 +136,12 @@ def main():
             period_1 = display_df[display_df['Date Object'].dt.day <= 15]
             period_2 = display_df[display_df['Date Object'].dt.day > 15]
             
-            st.subheader(f"🗓️ {view_title}")
+            st.markdown(f"<h2 style='text-align: center;'>{view_title}</h2>", unsafe_allow_html=True)
+            st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${display_df['Fee'].sum():,.2f}</h1>", unsafe_allow_html=True)
+            
             col1, col2 = st.columns(2)
             col1.metric("🗓️ 1st - 15th", f"${period_1['Fee'].sum():,.2f}", f"{len(period_1)} patients")
             col2.metric("🗓️ 16th - End", f"${period_2['Fee'].sum():,.2f}", f"{len(period_2)} patients")
-            
-            st.markdown(f"**Total for Month: ${display_df['Fee'].sum():,.2f}**")
 
         # Table Display
         potential_cols = [date_col, name_col, "Type of encounter", "Fee", "finalized report ?", "Doctor"]
