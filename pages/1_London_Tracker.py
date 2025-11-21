@@ -4,19 +4,22 @@ import pandas as pd
 import json
 from datetime import datetime
 
-# --- CONFIGURATION ---
-SHEET_NAME = 'Tugolov combined questionnaire(Responses)'
+# --- 🏥 DOCTOR CONFIGURATION ---
+# Format: "Name in Dropdown": "Exact Name of Google Sheet"
+DOCTOR_SHEETS = {
+    "Dr. Tugolov": "Tugolov combined questionnaire(Responses)",
+    # "Dr. Smith": "Smith EMG Form(Responses)",  <-- Add new doctors here later!
+}
+
 CREDENTIALS_FILE = 'credentials.json'
 
 # --- CONNECT TO GOOGLE ---
 @st.cache_resource
 def get_connection():
     try:
-        # Check if we are on Streamlit Cloud (Secrets)
         if "gcp_json" in st.secrets:
             creds_dict = json.loads(st.secrets["gcp_json"])
             gc = gspread.service_account_from_dict(creds_dict)
-        # Otherwise, use local file
         else:
             gc = gspread.service_account(filename=CREDENTIALS_FILE)
         return gc
@@ -24,49 +27,74 @@ def get_connection():
         st.error(f"❌ Error: {e}")
         st.stop()
 
-def get_data():
+# Modified to accept the specific sheet name
+def get_data(sheet_name):
     gc = get_connection()
-    sh = gc.open(SHEET_NAME)
-    # Get the first tab (Index 0)
-    worksheet = sh.get_worksheet(0) 
-    return worksheet.get_all_records()
+    try:
+        sh = gc.open(sheet_name)
+        # Get the first tab
+        worksheet = sh.get_worksheet(0) 
+        return worksheet.get_all_records()
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"❌ Could not find sheet: '{sheet_name}'. Did you share it with the robot?")
+        st.stop()
 
 # --- DASHBOARD ---
 def main():
     st.set_page_config(page_title="London Tracker", layout="wide")
     
-    # Sidebar Navigation Button
+    # Sidebar Navigation
     if st.sidebar.button("⬅️ Back to Home"):
         st.switch_page("Home.py")
         
-    if st.sidebar.button("🔄 FORCE REFRESH DATA"):
+    st.title("🇬🇧 London Patient Tracker")
+
+    # --- DOCTOR SELECTOR ---
+    st.sidebar.header("👨‍⚕️ Select Doctor")
+    selected_doc_name = st.sidebar.selectbox("Choose Dashboard:", list(DOCTOR_SHEETS.keys()))
+    
+    # Get the actual sheet name based on selection
+    target_sheet = DOCTOR_SHEETS[selected_doc_name]
+    
+    if st.sidebar.button("🔄 FORCE REFRESH"):
         st.cache_data.clear()
         st.rerun()
 
-    st.title("🇬🇧 London Patient Tracker")
-
+    # Load Data for the SELECTED Doctor
     try:
-        data = get_data()
+        data = get_data(target_sheet)
         df = pd.DataFrame(data)
     except Exception as e:
         st.error(f"Error reading sheet: {e}")
         st.stop()
 
     if not df.empty:
-        # 1. CLEAN DATES (USING TIMESTAMP)
-        if 'name' in df.columns:
-            df = df[df['name'].astype(str).str.strip() != ""]
+        # 1. CLEAN DATES
+        # We check for 'name' or 'Name' just in case the form is slightly different
+        name_col = 'name' if 'name' in df.columns else 'Name'
+        if name_col in df.columns:
+            df = df[df[name_col].astype(str).str.strip() != ""]
         
-        # Convert Timestamp column to real datetime objects
-        df['Date Object'] = pd.to_datetime(df['Timestamp'], dayfirst=True, errors='coerce')
+        # Try finding the Date column (might be 'Timestamp' or 'Date')
+        date_col = 'Timestamp' if 'Timestamp' in df.columns else 'Date'
+        
+        df['Date Object'] = pd.to_datetime(df[date_col], dayfirst=True, errors='coerce')
         df = df.dropna(subset=['Date Object'])
 
         # 2. CALC FEES
         def calc_fee(row):
-            t = str(row.get("Type of encounter", "")).lower()
-            if "new consult" in t: return 85.00
-            if "non cts" in t: return 65.00
-            if "follow up" in t: return 65.00
+            # Try to find the encounter column
+            encounter_col = None
+            for col in df.columns:
+                if "encounter" in col.lower() or "consult" in col.lower():
+                    encounter_col = col
+                    break
+            
+            if encounter_col:
+                t = str(row.get(encounter_col, "")).lower()
+                if "new consult" in t: return 85.00
+                if "non cts" in t: return 65.00
+                if "follow up" in t: return 65.00
             return 0.00
 
         df['Fee'] = df.apply(calc_fee, axis=1)
@@ -77,7 +105,6 @@ def main():
         
         if available_months:
             current_month_str = datetime.now().strftime('%B %Y')
-            # --- The line below is where your previous code got cut off ---
             default_index = available_months.index(current_month_str) if current_month_str in available_months else 0
             
             selected_month = st.sidebar.selectbox("Choose Month", available_months, index=default_index)
@@ -96,9 +123,10 @@ def main():
 
             st.divider()
             
-            # TABLE
-            wanted_cols = ["Timestamp", "name", "Type of encounter", "Fee", "finalized report ?"]
-            final_cols = [c for c in wanted_cols if c in monthly_df.columns]
+            # TABLE DISPLAY
+            # We verify which columns actually exist before trying to show them
+            potential_cols = [date_col, name_col, "Type of encounter", "Fee", "finalized report ?", "Doctor"]
+            final_cols = [c for c in potential_cols if c in monthly_df.columns]
             
             st.dataframe(
                 monthly_df.sort_values(by="Date Object", ascending=False)[final_cols], 
@@ -106,7 +134,7 @@ def main():
                 hide_index=True
             )
         else:
-            st.warning("No valid timestamps found.")
+            st.warning("No valid dates found.")
     else:
         st.info("No data found.")
 
