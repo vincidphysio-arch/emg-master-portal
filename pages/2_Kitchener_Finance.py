@@ -58,34 +58,30 @@ def main():
         df = df[df['Date'].astype(str).str.strip() != ""]
         df['Date Object'] = pd.to_datetime(df['Date'], errors='coerce')
         df = df.dropna(subset=['Date Object'])
-        
         df['Amount'] = pd.to_numeric(df['Amount'].astype(str).str.replace('$','').str.replace(',',''), errors='coerce')
-        
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
 
-        # --- SIDEBAR FILTERS ---
+        # --- SIDEBAR ---
         st.sidebar.header("📅 Time Filters")
         available_years = sorted(df['Year'].unique(), reverse=True)
         selected_year = st.sidebar.selectbox("Select Year", available_years)
         year_df = df[df['Year'] == selected_year]
 
-        # MONTH SORTING (DESCENDING)
         available_months = list(year_df['Month_Name'].unique())
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
         view_options = ["All Months"] + available_months
         
-        # Auto-select Current Month
         current_month_name = datetime.now().strftime('%B')
         default_idx = 0
         if current_month_name in available_months:
-            default_idx = view_options.index(current_month_name)
+            default_idx = view_options.index(current_month_name) + 1 
             
-        selected_month_view = st.sidebar.selectbox("Select Month", view_options, index=default_idx)
+        selected_month_view = st.sidebar.selectbox("Select Month", view_options, index=default_idx if current_month_name in available_months else 0)
 
-        # --- MAIN PAGE: METRICS ---
+        # --- YEARLY METRICS ---
         year_total = year_df['Amount'].sum()
         year_tripic = year_df[year_df['Doctor'].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
         year_cartagena = year_df[year_df['Doctor'].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
@@ -107,8 +103,10 @@ def main():
             view_title = f"Activity in {selected_month_view} {selected_year}"
 
         month_total = display_df['Amount'].sum()
-        st.subheader(f"🗓️ {view_title}")
-        st.markdown(f"**Total: ${month_total:,.2f}**")
+        
+        # *** NEW BIG CENTERED TITLE ***
+        st.markdown(f"<h2 style='text-align: center;'>{view_title}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${month_total:,.2f}</h1>", unsafe_allow_html=True)
         
         display_cols = ["Date", "Sender", "Amount", "Doctor"]
         cols_to_show = [c for c in display_cols if c in display_df.columns]
@@ -118,7 +116,6 @@ def main():
             use_container_width=True, 
             hide_index=True
         )
-        
     else:
         st.info("Sheet is connected, but empty.")
 
