@@ -5,10 +5,9 @@ import json
 from datetime import datetime
 
 # --- 🏥 DOCTOR CONFIGURATION ---
-# Format: "Name in Dropdown": "Exact Name of Google Sheet"
 DOCTOR_SHEETS = {
     "Dr. Tugolov": "Tugolov combined questionnaire(Responses)",
-    # "Dr. Smith": "Smith EMG Form(Responses)",  <-- Add new doctors here later!
+    # Add new doctors here later: "Dr. Smith": "Smith Sheet Name"
 }
 
 CREDENTIALS_FILE = 'credentials.json'
@@ -27,12 +26,10 @@ def get_connection():
         st.error(f"❌ Error: {e}")
         st.stop()
 
-# Modified to accept the specific sheet name
 def get_data(sheet_name):
     gc = get_connection()
     try:
         sh = gc.open(sheet_name)
-        # Get the first tab
         worksheet = sh.get_worksheet(0) 
         return worksheet.get_all_records()
     except gspread.exceptions.SpreadsheetNotFound:
@@ -43,24 +40,21 @@ def get_data(sheet_name):
 def main():
     st.set_page_config(page_title="London Tracker", layout="wide")
     
-    # Sidebar Navigation
     if st.sidebar.button("⬅️ Back to Home"):
         st.switch_page("Home.py")
         
-    st.title("🇬🇧 London Patient Tracker")
+    # *** UPDATED TITLE HERE ***
+    st.title("🏙️ London, ON Patient Tracker")
 
     # --- DOCTOR SELECTOR ---
     st.sidebar.header("👨‍⚕️ Select Doctor")
     selected_doc_name = st.sidebar.selectbox("Choose Dashboard:", list(DOCTOR_SHEETS.keys()))
-    
-    # Get the actual sheet name based on selection
     target_sheet = DOCTOR_SHEETS[selected_doc_name]
     
     if st.sidebar.button("🔄 FORCE REFRESH"):
         st.cache_data.clear()
         st.rerun()
 
-    # Load Data for the SELECTED Doctor
     try:
         data = get_data(target_sheet)
         df = pd.DataFrame(data)
@@ -70,20 +64,16 @@ def main():
 
     if not df.empty:
         # 1. CLEAN DATES
-        # We check for 'name' or 'Name' just in case the form is slightly different
         name_col = 'name' if 'name' in df.columns else 'Name'
         if name_col in df.columns:
             df = df[df[name_col].astype(str).str.strip() != ""]
         
-        # Try finding the Date column (might be 'Timestamp' or 'Date')
         date_col = 'Timestamp' if 'Timestamp' in df.columns else 'Date'
-        
         df['Date Object'] = pd.to_datetime(df[date_col], dayfirst=True, errors='coerce')
         df = df.dropna(subset=['Date Object'])
 
         # 2. CALC FEES
         def calc_fee(row):
-            # Try to find the encounter column
             encounter_col = None
             for col in df.columns:
                 if "encounter" in col.lower() or "consult" in col.lower():
@@ -124,7 +114,6 @@ def main():
             st.divider()
             
             # TABLE DISPLAY
-            # We verify which columns actually exist before trying to show them
             potential_cols = [date_col, name_col, "Type of encounter", "Fee", "finalized report ?", "Doctor"]
             final_cols = [c for c in potential_cols if c in monthly_df.columns]
             
