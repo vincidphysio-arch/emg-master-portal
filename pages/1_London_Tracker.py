@@ -33,31 +33,35 @@ def get_data(sheet_name):
         worksheet = sh.get_worksheet(0) 
         return worksheet.get_all_records()
     except gspread.exceptions.SpreadsheetNotFound:
-        st.error(f"❌ Could not find sheet: '{sheet_name}'")
+        st.error(f"❌ Could not find sheet: '{sheet_name}'.")
         st.stop()
 
 # --- DASHBOARD ---
 def main():
     st.set_page_config(page_title="London Tracker", layout="wide")
     
+    # --- SIDEBAR: NAVIGATION ---
     if st.sidebar.button("⬅️ Back to Home"):
         st.switch_page("Home.py")
         
+    # --- SIDEBAR: DOCTOR SELECTOR ---
+    st.sidebar.header("👨‍⚕️ Select Doctor")
+    selected_doc_name = st.sidebar.selectbox("Choose Dashboard:", list(DOCTOR_SHEETS.keys()))
+    target_sheet = DOCTOR_SHEETS[selected_doc_name]
+    
     if st.sidebar.button("🔄 FORCE REFRESH"):
         st.cache_data.clear()
         st.rerun()
 
-    # --- DOCTOR SELECTOR ---
-    st.sidebar.header("👨‍⚕️ Select Doctor")
-    selected_doc_name = st.sidebar.selectbox("Choose Dashboard:", list(DOCTOR_SHEETS.keys()))
-    target_sheet = DOCTOR_SHEETS[selected_doc_name]
-
+    # --- LOAD DATA ---
     try:
         data = get_data(target_sheet)
         df = pd.DataFrame(data)
     except Exception as e:
         st.error(f"Error reading sheet: {e}")
         st.stop()
+
+    st.title("🏙️ London, ON Patient Tracker")
 
     if not df.empty:
         # 1. CLEAN DATA
@@ -91,16 +95,25 @@ def main():
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
         df['Month_Year'] = df['Date Object'].dt.strftime('%B %Y')
 
-        # --- SIDEBAR: YEAR SELECTOR ---
+        # --- SIDEBAR: TIME FILTERS ---
         st.sidebar.header("📅 Time Filters")
+        
+        # Year Selector
         available_years = sorted(df['Year'].unique(), reverse=True)
         selected_year = st.sidebar.selectbox("Select Year", available_years)
         
-        # Filter to Year
+        # Filter Data to Year
         year_df = df[df['Year'] == selected_year]
 
-        # --- MAIN PAGE: YEARLY OVERVIEW ---
-        st.title(f"🏙️ London Financial Overview: {selected_year}")
+        # Month Selector (MOVED TO SIDEBAR)
+        available_months = list(year_df['Month_Name'].unique())
+        month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+        available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99)
+        
+        view_options = ["All Months"] + available_months
+        selected_month_view = st.sidebar.selectbox("Select Month", view_options)
+
+        # --- MAIN PAGE: METRICS ---
         
         # Calculate Yearly Totals
         year_total = year_df['Fee'].sum()
@@ -114,40 +127,35 @@ def main():
 
         st.divider()
 
-        # --- MONTHLY DETAILS (Paycheck View) ---
-        st.subheader(f"🗓️ Monthly Details ({selected_year})")
+        # --- MONTHLY DETAILS ---
         
-        # Month Selector
-        available_months = list(year_df['Month_Name'].unique())
-        month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-        available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99)
-        
-        view_options = ["All Months"] + available_months
-        selected_month_view = st.selectbox("Filter by Month", view_options)
-
+        # Filter Logic based on Sidebar Selection
         if selected_month_view == "All Months":
             display_df = year_df
             view_title = f"All Activity in {selected_year}"
             
             # Show simple table for full year
             month_total = display_df['Fee'].sum()
-            st.markdown(f"**{view_title}** - Total: **${month_total:,.2f}**")
+            st.subheader(f"🗓️ {view_title}")
+            st.markdown(f"**Total: ${month_total:,.2f}**")
             
         else:
             # Show "Pay Period" breakdown for specific month
             display_df = year_df[year_df['Month_Name'] == selected_month_view]
+            view_title = f"Details for {selected_month_view} {selected_year}"
             
             period_1 = display_df[display_df['Date Object'].dt.day <= 15]
             period_2 = display_df[display_df['Date Object'].dt.day > 15]
             
+            st.subheader(f"🗓️ {view_title}")
             col1, col2 = st.columns(2)
             col1.metric("🗓️ 1st - 15th", f"${period_1['Fee'].sum():,.2f}", f"{len(period_1)} patients")
             col2.metric("🗓️ 16th - End", f"${period_2['Fee'].sum():,.2f}", f"{len(period_2)} patients")
             
-            st.markdown(f"**Total for {selected_month_view}: ${display_df['Fee'].sum():,.2f}**")
+            st.markdown(f"**Total for Month: ${display_df['Fee'].sum():,.2f}**")
 
         # Table Display
-        potential_cols = [date_col, name_col, "Type of encounter", "Fee", "finalized report ?"]
+        potential_cols = [date_col, name_col, "Type of encounter", "Fee", "finalized report ?", "Doctor"]
         final_cols = [c for c in potential_cols if c in display_df.columns]
         
         st.dataframe(
