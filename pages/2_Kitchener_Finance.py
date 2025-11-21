@@ -74,12 +74,13 @@ def main():
         
         view_options = ["All Months"] + available_months
         
+        # FIX: Correctly find the current month index
         current_month_name = datetime.now().strftime('%B')
         default_idx = 0
-        if current_month_name in available_months:
-            default_idx = view_options.index(current_month_name) + 1 
+        if current_month_name in view_options:
+            default_idx = view_options.index(current_month_name)
             
-        selected_month_view = st.sidebar.selectbox("Select Month", view_options, index=default_idx if current_month_name in available_months else 0)
+        selected_month_view = st.sidebar.selectbox("Select Month", view_options, index=default_idx)
 
         # --- YEARLY METRICS ---
         year_total = year_df['Amount'].sum()
@@ -104,8 +105,8 @@ def main():
 
         month_total = display_df['Amount'].sum()
         
-        # *** NEW BIG CENTERED TITLE ***
-        st.markdown(f"<h2 style='text-align: center;'>{view_title}</h2>", unsafe_allow_html=True)
+        # RED TITLE
+        st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
         st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${month_total:,.2f}</h1>", unsafe_allow_html=True)
         
         display_cols = ["Date", "Sender", "Amount", "Doctor"]
