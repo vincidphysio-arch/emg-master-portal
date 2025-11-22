@@ -64,7 +64,6 @@ def main():
 
         # --- SIDEBAR ---
         st.sidebar.header("📅 Time Filters")
-        
         available_years = sorted(df['Year'].unique(), reverse=True)
         selected_year = st.sidebar.selectbox("Select Year", available_years)
         year_df = df[df['Year'] == selected_year]
@@ -82,50 +81,63 @@ def main():
             
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
-        # LOGIC FOR "LAST X MONTHS"
-        months_back = 0
+        # LOGIC FOR MONTHS BACK
+        months_divisor = 0 # Used to calculate averages
+        
         if selected_view == "Last X Months":
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
             if period_opt == "Custom":
                 months_back = st.sidebar.number_input("Enter number of months", min_value=1, value=3)
             else:
                 months_back = period_opt
-
-        # --- FILTERING LOGIC ---
-        if selected_view == "Current Year (Overview)":
-            current_year = datetime.now().year
-            display_df = df[df['Year'] == current_year]
-            view_title = f"Financial Overview: {current_year}"
             
-        elif selected_view == "Last X Months":
             today = datetime.now()
             start_date = today - pd.DateOffset(months=months_back)
             display_df = df[df['Date Object'] >= start_date]
             view_title = f"Income: Last {months_back} Months"
+            months_divisor = months_back
+            
+        elif selected_view == "Current Year (Overview)":
+            current_year = datetime.now().year
+            display_df = df[df['Year'] == current_year]
+            view_title = f"Financial Overview: {current_year}"
+            
+            # If viewing current year, divisor is current month number (e.g. Nov = 11)
+            # If viewing past year, divisor is 12
+            if selected_year == current_year:
+                months_divisor = datetime.now().month
+            else:
+                months_divisor = 12
             
         else:
             display_df = df[df['Month_Name'] == selected_view]
             view_title = f"Activity in {selected_view}"
+            months_divisor = 0 # No average for single month view
 
         # --- METRICS ---
         total_income = display_df['Amount'].sum()
         tripic_total = display_df[display_df['Doctor'].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
         cartagena_total = display_df[display_df['Doctor'].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
 
-        # TITLES & CALCULATIONS
+        # TITLES & AVERAGES
         st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
         
-        # *** NEW LOGIC: Show Average ONLY for "Last X Months" ***
-        if selected_view == "Last X Months" and months_back > 0:
-            monthly_avg = total_income / months_back
+        if months_divisor > 0:
+            monthly_avg = total_income / months_divisor
             st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_income:,.2f} <span style='font-size: 0.6em; color: gray;'> (Avg: ${monthly_avg:,.2f}/mo)</span></h1>", unsafe_allow_html=True)
         else:
             st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_income:,.2f}</h1>", unsafe_allow_html=True)
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Date Range", f"{display_df['Date Object'].min().date()} to {display_df['Date Object'].max().date()}" if not display_df.empty else "-")
-        m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}")
-        m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}")
+        
+        # Doctor Metrics with Averages
+        if months_divisor > 0:
+            m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}", f"Avg: ${tripic_total/months_divisor:,.2f}/mo")
+            m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}", f"Avg: ${cartagena_total/months_divisor:,.2f}/mo")
+        else:
+            m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}")
+            m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}")
 
         st.divider()
         
