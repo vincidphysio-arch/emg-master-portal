@@ -16,21 +16,29 @@ if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 def analyze_receipt(image):
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    prompt = """
-    Analyze this receipt. Extract to JSON:
-    - Date (YYYY-MM-DD)
-    - Amount (number)
-    - Merchant
-    - Category (Travel/Parking, Medical Supplies, Professional Fees, Education, Office/Software, Meals, Other)
-    """
+    # UPDATED MODEL NAME: Using 'latest' to avoid 404 errors
     try:
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        prompt = """
+        Analyze this receipt. Extract to JSON:
+        - Date (YYYY-MM-DD)
+        - Amount (number)
+        - Merchant
+        - Category (Travel/Parking, Medical Supplies, Professional Fees, Education, Office/Software, Meals, Other)
+        """
         response = model.generate_content([prompt, image])
         clean_json = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_json)
     except Exception as e:
-        st.error(f"AI Error: {e}")
-        return None
+        # Fallback to Pro Vision if Flash fails
+        try:
+            model = genai.GenerativeModel('gemini-pro-vision')
+            response = model.generate_content([prompt, image])
+            clean_json = response.text.replace('```json', '').replace('```', '').strip()
+            return json.loads(clean_json)
+        except:
+            st.error(f"AI Error: {e}")
+            return None
 
 # --- CONNECT TO GOOGLE ---
 @st.cache_resource
@@ -118,39 +126,29 @@ def main():
     if 'form_date' not in st.session_state: st.session_state['form_date'] = date.today()
     if 'form_amount' not in st.session_state: st.session_state['form_amount'] = 0.00
     if 'form_merch' not in st.session_state: st.session_state['form_merch'] = ""
-    if 'form_cat_index' not in st.session_state: st.session_state['form_cat_index'] = 6 # Default Other
+    if 'form_cat_index' not in st.session_state: st.session_state['form_cat_index'] = 6
 
     # --- 1. AI SCANNER ---
     with st.expander("📸 Scan Receipt (AI)", expanded=True):
         uploaded_file = st.file_uploader("Upload Receipt", type=['jpg','png','jpeg'], label_visibility="collapsed")
         
         if uploaded_file:
-            # Display image small
             st.image(uploaded_file, width=150)
             
             if st.button("✨ Extract Data"):
-                with st.spinner("Reading receipt..."):
+                with st.spinner("Analyzing..."):
                     data = analyze_receipt(Image.open(uploaded_file))
                     
                     if data:
-                        # 1. Amount
                         st.session_state['form_amount'] = float(data.get('Amount', 0))
-                        
-                        # 2. Merchant
                         st.session_state['form_merch'] = data.get('Merchant', '')
+                        try: st.session_state['form_date'] = datetime.strptime(data.get('Date'), "%Y-%m-%d").date()
+                        except: pass
                         
-                        # 3. Date
-                        try: 
-                            st.session_state['form_date'] = datetime.strptime(data.get('Date'), "%Y-%m-%d").date()
-                        except: 
-                            pass
-                        
-                        # 4. Category Matching
                         ai_cat = data.get('Category', '').lower()
-                        # List must match the selectbox below exactly
                         cat_options = ["Travel/Parking", "Medical Supplies", "Professional Fees", "Education", "Office/Software", "Meals", "Other"]
                         
-                        found_index = 6 # Default Other
+                        found_index = 6 
                         if "fuel" in ai_cat or "gas" in ai_cat or "parking" in ai_cat: found_index = 0
                         elif "medical" in ai_cat: found_index = 1
                         elif "fee" in ai_cat: found_index = 2
@@ -160,8 +158,8 @@ def main():
                         
                         st.session_state['form_cat_index'] = found_index
                         
-                        st.success("✅ Data Extracted! Check the form below.")
-                        st.rerun() # FORCE REFRESH TO SHOW DATA
+                        st.success("✅ Data Extracted!")
+                        st.rerun()
 
     # --- 2. VERIFY FORM ---
     st.divider()
@@ -183,8 +181,6 @@ def main():
             receipt_note = "AI Scanned" if uploaded_file else "Manual"
             add_expense(d, c, a, l, f"{desc} ({receipt_note})")
             st.success("Saved!")
-            
-            # Reset Form
             st.session_state['form_amount'] = 0.0
             st.session_state['form_merch'] = ""
             st.cache_data.clear()
