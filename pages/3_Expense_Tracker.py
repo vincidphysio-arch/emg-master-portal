@@ -9,7 +9,7 @@ from PIL import Image
 # --- CONFIGURATION ---
 SHEET_NAME = 'EMG Payments Kitchener'
 CREDENTIALS_FILE = 'credentials.json'
-WORKSHEET_NAME = 'Expenses_Form'
+WORKSHEET_NAME = 'Expenses'
 
 # --- SETUP AI (Gemini) ---
 if "GEMINI_API_KEY" in st.secrets:
