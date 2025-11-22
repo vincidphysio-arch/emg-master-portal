@@ -27,6 +27,15 @@ def analyze_receipt(image):
             "Merchant": "Store Name",
             "Category": "Best Fit Category"
         }
+        Categories to choose from: 
+        - Gas
+        - Travel/Parking
+        - Medical Supplies
+        - Professional Fees
+        - Education
+        - Office/Software
+        - Meals
+        - Other
         """
         response = model.generate_content([prompt, image])
         clean_text = response.text.replace('```json', '').replace('```', '').strip()
@@ -61,7 +70,7 @@ def get_expense_data():
         for row in data[1:]:
             while len(row) < 8: row.append("")
             
-            # HYBRID LOGIC (Keeps your old history visible)
+            # HYBRID LOGIC
             date_val = row[1]
             cat_val = row[2]
             amt_val = row[3]
@@ -121,7 +130,7 @@ def main():
     if 'form_date' not in st.session_state: st.session_state['form_date'] = date.today()
     if 'form_amount' not in st.session_state: st.session_state['form_amount'] = 0.00
     if 'form_merch' not in st.session_state: st.session_state['form_merch'] = ""
-    if 'form_cat_index' not in st.session_state: st.session_state['form_cat_index'] = 6
+    if 'form_cat_index' not in st.session_state: st.session_state['form_cat_index'] = 7 # Default Other
 
     # --- 1. AI SCANNER ---
     with st.expander("📸 Scan Receipt (AI)", expanded=True):
@@ -146,73 +155,34 @@ def main():
                         try: st.session_state['form_date'] = datetime.strptime(data.get('Date'), "%Y-%m-%d").date()
                         except: pass
                         
-                        # Category Matching
+                        # Category Matching (Updated for Gas)
                         ai_cat = str(data.get('Category', '')).lower()
                         
-                        found_index = 6 
-                        if "fuel" in ai_cat or "gas" in ai_cat or "parking" in ai_cat or "travel" in ai_cat: found_index = 0
-                        elif "medical" in ai_cat: found_index = 1
-                        elif "fee" in ai_cat: found_index = 2
-                        elif "edu" in ai_cat: found_index = 3
-                        elif "soft" in ai_cat or "office" in ai_cat: found_index = 4
-                        elif "meal" in ai_cat or "food" in ai_cat: found_index = 5
+                        # List must match the selectbox below exactly
+                        cat_options = [
+                            "Gas",              # Index 0
+                            "Travel/Parking",   # Index 1
+                            "Medical Supplies", # Index 2
+                            "Professional Fees",# Index 3
+                            "Education",        # Index 4
+                            "Office/Software",  # Index 5
+                            "Meals",            # Index 6
+                            "Other"             # Index 7
+                        ]
+                        
+                        found_index = 7 # Default to Other
+                        
+                        if "gas" in ai_cat or "fuel" in ai_cat: found_index = 0
+                        elif "parking" in ai_cat or "travel" in ai_cat or "uber" in ai_cat: found_index = 1
+                        elif "medical" in ai_cat: found_index = 2
+                        elif "fee" in ai_cat: found_index = 3
+                        elif "edu" in ai_cat: found_index = 4
+                        elif "soft" in ai_cat or "office" in ai_cat: found_index = 5
+                        elif "meal" in ai_cat or "food" in ai_cat: found_index = 6
                         
                         st.session_state['form_cat_index'] = found_index
                         
                         st.success("✅ Data Extracted!")
                         st.rerun()
 
-    # --- 2. VERIFY FORM ---
-    st.divider()
-    st.subheader("📝 Verify & Save")
-    
-    with st.form("main_form"):
-        c1, c2 = st.columns(2)
-        with c1:
-            d = st.date_input("Date", value=st.session_state['form_date'])
-            c = st.selectbox("Category", 
-                             ["Travel/Parking", "Medical Supplies", "Professional Fees", "Education", "Office/Software", "Meals", "Other"], 
-                             index=st.session_state['form_cat_index'])
-            a = st.number_input("Amount", value=st.session_state['form_amount'], step=0.01)
-        with c2:
-            l = st.selectbox("Location", ["General / Both", "London", "Kitchener"])
-            desc = st.text_input("Description", value=st.session_state['form_merch'])
-        
-        if st.form_submit_button("💾 Save Expense"):
-            receipt_note = "AI Scanned" if uploaded_file else "Manual"
-            add_expense(d, c, a, l, f"{desc} ({receipt_note})")
-            st.success("Saved!")
-            st.session_state['form_amount'] = 0.0
-            st.session_state['form_merch'] = ""
-            st.cache_data.clear()
-            st.rerun()
-
-    st.divider()
-
-    # --- 3. DATA DISPLAY ---
-    try:
-        df = get_expense_data()
-    except:
-        st.stop()
-
-    if not df.empty:
-        df['Amount'] = pd.to_numeric(df['Amount'].astype(str).str.replace('$','').str.replace(',',''), errors='coerce').fillna(0)
-        df['Date Object'] = pd.to_datetime(df['Date'], errors='coerce')
-        df = df.dropna(subset=['Date Object'])
-        df['Year'] = df['Date Object'].dt.year
-        
-        years = sorted(df['Year'].unique(), reverse=True)
-        sel_year = st.sidebar.selectbox("Year", years) if years else 2025
-        
-        y_df = df[df['Year'] == sel_year]
-        
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total", f"${y_df['Amount'].sum():,.2f}")
-        m2.metric("London", f"${y_df[y_df['Location'].str.contains('London', case=False, na=False)]['Amount'].sum():,.2f}")
-        m3.metric("Kitchener", f"${y_df[y_df['Location'].str.contains('Kitch', case=False, na=False)]['Amount'].sum():,.2f}")
-        m4.metric("General", f"${y_df[y_df['Location'].str.contains('General', case=False, na=False)]['Amount'].sum():,.2f}")
-        
-        st.dataframe(y_df.sort_values('Date Object', ascending=False)[["Date", "Category", "Amount", "Location", "Description"]], use_container_width=True, hide_index=True)
-
-if __name__ == "__main__":
-    main()
+    # ---
