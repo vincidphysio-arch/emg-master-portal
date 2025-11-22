@@ -63,21 +63,20 @@ def main():
         total_earnings = df_pay['Amount'].sum()
         
         # Clean Work Log
-        # Try to find the 'Date Worked' column
-        date_col = 'Date Worked' # Default
+        date_col = 'Date Worked' 
         if 'Date Worked' not in df_work.columns:
-             # Fallback if header is different
              date_col = df_work.columns[0] 
 
         df_work['Date Object'] = pd.to_datetime(df_work[date_col], errors='coerce')
         df_work = df_work.dropna(subset=['Date Object'])
         
-        # Count PAST work days
+        # Count PAST work days (Unique Dates Only!)
         today = datetime.now()
         past_work = df_work[df_work['Date Object'] < today]
         future_work = df_work[df_work['Date Object'] >= today]
         
-        days_worked = len(past_work)
+        # *** FIX: Count UNIQUE dates so split days count as 1 ***
+        days_worked = past_work['Date Object'].dt.date.nunique()
         
         # Calculate Real Average
         real_avg_rate = 0
@@ -87,7 +86,6 @@ def main():
         # --- 2. SIDEBAR CONTROLS ---
         st.sidebar.header("⚙️ Forecast Settings")
         
-        # Let user override the rate
         use_rate = st.sidebar.slider(
             "Estimated Daily Income ($)", 
             min_value=500, 
@@ -97,45 +95,40 @@ def main():
             help="We calculated this baseline from your past payments."
         )
         
-        # Filter range
         months_forward = st.sidebar.slider("Look Forward (Months)", 1, 12, 6)
 
         # --- 3. CALCULATE PREDICTIONS ---
-        # Filter future work to selected range
         end_date = today + timedelta(days=months_forward*30)
         scope_work = future_work[future_work['Date Object'] <= end_date]
         
-        future_days_count = len(scope_work)
+        # *** FIX: Count UNIQUE future dates ***
+        future_days_count = scope_work['Date Object'].dt.date.nunique()
         projected_income = future_days_count * use_rate
         
         # --- 4. VISUALS ---
-        
-        # Top Metrics
         m1, m2, m3 = st.columns(3)
         m1.metric("📅 Future Work Days", f"{future_days_count} days", f"Next {months_forward} months")
         m2.metric("💰 Projected Income", f"${projected_income:,.2f}", f"@ ${use_rate}/day")
-        m3.metric("📉 Historical Avg", f"${real_avg_rate:,.2f}/day", f"Based on {days_worked} past shifts")
+        m3.metric("📉 Historical Avg", f"${real_avg_rate:,.2f}/day", f"Based on {days_worked} past days")
         
         st.divider()
         
         # Group by Month for Chart
         scope_work['Month_Year'] = scope_work['Date Object'].dt.strftime('%Y-%m')
-        # Sort properly
-        scope_work = scope_work.sort_values('Date Object')
         
-        monthly_counts = scope_work.groupby('Month_Year').size().reset_index(name='Days')
+        # *** FIX: Group by Month, counting UNIQUE dates ***
+        monthly_counts = scope_work.groupby('Month_Year')['Date Object'].apply(lambda x: x.dt.date.nunique()).reset_index(name='Days')
         monthly_counts['Estimated Income'] = monthly_counts['Days'] * use_rate
         
-        # Show Chart
         st.subheader("📈 Monthly Forecast")
         st.bar_chart(monthly_counts.set_index('Month_Year')['Estimated Income'])
         
-        # Show List
         with st.expander("See Future Schedule"):
             display_cols = [date_col, "Event Name", "Doctor"]
             final_cols = [c for c in display_cols if c in scope_work.columns]
+            # Sort by date
             st.dataframe(
-                scope_work[final_cols], 
+                scope_work.sort_values('Date Object')[final_cols], 
                 use_container_width=True, 
                 hide_index=True
             )
