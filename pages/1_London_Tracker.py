@@ -114,7 +114,6 @@ def main():
         # LOGIC
         months_back = 0
         months_divisor = 0
-        metric_delta = None
 
         if selected_view == "Last X Months":
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
@@ -133,22 +132,12 @@ def main():
             current_year = datetime.now().year
             display_df = df[df['Year'] == current_year]
             view_title = f"Financial Overview: {current_year}"
-            
-            # YoY Comparison Logic
-            prev_year = current_year - 1
-            prev_year_df = df[df['Year'] == prev_year]
-            current_total = display_df['Fee'].sum()
-            prev_total = prev_year_df['Fee'].sum()
-            
-            if prev_total > 0:
-                delta_val = current_total - prev_total
-                delta_pct = (delta_val / prev_total) * 100
-                metric_delta = f"{delta_pct:,.1f}% vs {prev_year}"
-            
-            months_divisor = datetime.now().month
+            if selected_year == current_year:
+                months_divisor = datetime.now().month
+            else:
+                months_divisor = 12
             
         else:
-            # Specific Month
             display_df = df[df['Month_Name'] == selected_view]
             view_title = f"Details for {selected_view}"
             months_divisor = 0
@@ -166,56 +155,5 @@ def main():
             st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_period_income:,.2f}</h1>", unsafe_allow_html=True)
 
         m1, m2, m3 = st.columns(3)
-        # Added delta here for YoY
-        m1.metric("Total London Income", f"${total_period_income:,.2f}", delta=metric_delta)
-        m2.metric("Total Patients", f"{total_patients}")
-        
-        if total_patients > 0:
-            m3.metric("Avg per Patient", f"${total_period_income/total_patients:,.2f}")
-        else:
-            m3.metric("Avg per Patient", "$0.00")
-
-        st.divider()
-
-        # If specific month, show pay periods
-        if months_divisor == 0: 
-             period_1 = display_df[display_df['Date Object'].dt.day <= 15]
-             period_2 = display_df[display_df['Date Object'].dt.day > 15]
-             c1, c2 = st.columns(2)
-             c1.metric("🗓️ 1st - 15th", f"${period_1['Fee'].sum():,.2f}", f"{len(period_1)} patients")
-             c2.metric("🗓️ 16th - End", f"${period_2['Fee'].sum():,.2f}", f"{len(period_2)} patients")
-             st.divider()
-
-        # --- MOBILE CARD VIEW ---
-        use_card_view = st.toggle("📱 Mobile Card View", value=True)
-        
-        if use_card_view:
-            st.caption("Showing recent activity")
-            for index, row in display_df.sort_values(by="Date Object", ascending=False).iterrows():
-                with st.container(border=True):
-                    c1, c2 = st.columns([3, 2])
-                    # Left Side: Patient Name & Date
-                    c1.write(f"**{row[name_col]}**")
-                    encounter_type = row.get("Type of encounter", "Unknown")
-                    c1.caption(f"📅 {row['Date Object'].date()} • {encounter_type}")
-                    # Right Side: Amount
-                    c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${row['Fee']:.0f}</h3>", unsafe_allow_html=True)
-                    
-                    if "finalized report ?" in row:
-                        status = str(row["finalized report ?"]).strip()
-                        if status and status.lower() != "yes":
-                            st.caption(f"⚠️ Report: {status}")
-        else:
-            # Table View
-            potential_cols = [date_col, name_col, "Type of encounter", "Fee", "finalized report ?", "Doctor"]
-            final_cols = [c for c in potential_cols if c in display_df.columns]
-            st.dataframe(
-                display_df.sort_values(by="Date Object", ascending=False)[final_cols], 
-                use_container_width=True, 
-                hide_index=True
-            )
-    else:
-        st.info("No data found.")
-
-if __name__ == "__main__":
-    main()
+        m1.metric("Total Patients", f"{total_patients}")
+        if total_
