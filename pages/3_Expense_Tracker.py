@@ -16,7 +16,7 @@ if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 def analyze_receipt(image):
-    # Try standard Flash model first
+    # Use the specific, stable Flash model
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = """
@@ -31,16 +31,9 @@ def analyze_receipt(image):
         response = model.generate_content([prompt, image])
         clean_text = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_text)
-    except Exception:
-        # Fallback if Flash fails
-        try:
-            model = genai.GenerativeModel('gemini-pro-vision')
-            response = model.generate_content([prompt, image])
-            clean_text = response.text.replace('```json', '').replace('```', '').strip()
-            return json.loads(clean_text)
-        except Exception as e:
-            st.error(f"AI Error: {e}")
-            return None
+    except Exception as e:
+        st.error(f"AI Error: {e}")
+        return None
 
 # --- CONNECT TO GOOGLE ---
 @st.cache_resource
@@ -68,7 +61,7 @@ def get_expense_data():
         for row in data[1:]:
             while len(row) < 8: row.append("")
             
-            # HYBRID LOGIC
+            # HYBRID LOGIC (Keeps your old history visible)
             date_val = row[1]
             cat_val = row[2]
             amt_val = row[3]
@@ -138,7 +131,7 @@ def main():
             st.image(uploaded_file, width=150)
             
             if st.button("✨ Extract Data"):
-                with st.spinner("Analyzing..."):
+                with st.spinner("Reading receipt..."):
                     data = analyze_receipt(Image.open(uploaded_file))
                     
                     if data:
