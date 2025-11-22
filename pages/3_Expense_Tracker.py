@@ -16,7 +16,7 @@ if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 def analyze_receipt(image):
-    # Use the standard, stable model name
+model = genai.GenerativeModel('gemini-1.5-flash')
     # We try Flash first (Fast/Cheap), then Pro (Smarter) if Flash fails
     models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro-vision']
     
