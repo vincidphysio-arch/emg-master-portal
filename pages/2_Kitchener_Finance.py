@@ -27,7 +27,6 @@ def get_data():
     sh = gc.open(SHEET_NAME)
     worksheet = sh.worksheet("Payments")
     
-    # SAFE LOAD (Headers)
     data = worksheet.get_all_values()
     headers = data[0]
     rows = data[1:]
@@ -82,7 +81,7 @@ def main():
             
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
-        # LOGIC
+        # LOGIC FOR MONTHS BACK
         months_divisor = 0
         if selected_view == "Last X Months":
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
@@ -135,15 +134,36 @@ def main():
 
         st.divider()
         
-        # TABLE
-        display_cols = ["Date", "Sender", "Amount", "Doctor"]
-        cols_to_show = [c for c in display_cols if c in display_df.columns]
+        # --- MOBILE CARD VIEW (NEW) ---
+        use_card_view = st.toggle("📱 Mobile Card View", value=True)
         
-        st.dataframe(
-            display_df.sort_values(by="Date Object", ascending=False)[cols_to_show], 
-            use_container_width=True, 
-            hide_index=True
-        )
+        if use_card_view:
+            st.caption("Showing recent transactions")
+            # Sort by date descending
+            for index, row in display_df.sort_values(by="Date Object", ascending=False).iterrows():
+                with st.container(border=True):
+                    c1, c2 = st.columns([3, 2])
+                    # Left Side: Sender & Date
+                    sender_name = row.get("Sender", "Unknown Sender")
+                    c1.write(f"**{sender_name}**")
+                    
+                    date_str = row['Date Object'].strftime('%Y-%m-%d')
+                    doc_name = row.get("Doctor", "Unknown")
+                    c1.caption(f"📅 {date_str} • {doc_name}")
+                    
+                    # Right Side: Amount
+                    amt_val = row.get('Amount', 0)
+                    c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${amt_val:,.2f}</h3>", unsafe_allow_html=True)
+        else:
+            # Table View
+            display_cols = ["Date", "Sender", "Amount", "Doctor"]
+            cols_to_show = [c for c in display_cols if c in display_df.columns]
+            
+            st.dataframe(
+                display_df.sort_values(by="Date Object", ascending=False)[cols_to_show], 
+                use_container_width=True, 
+                hide_index=True
+            )
     else:
         st.info("Sheet is connected, but empty.")
 
