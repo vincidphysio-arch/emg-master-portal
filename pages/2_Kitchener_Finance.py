@@ -8,6 +8,7 @@ from datetime import datetime
 SHEET_NAME = 'EMG Payments Kitchener'
 CREDENTIALS_FILE = 'credentials.json'
 
+# --- CONNECT TO GOOGLE ---
 @st.cache_resource
 def get_connection():
     try:
@@ -26,31 +27,22 @@ def get_data():
     sh = gc.open(SHEET_NAME)
     worksheet = sh.worksheet("Payments")
     
-    # Force standard loading
+    # Safe loading method
     data = worksheet.get_all_values()
-    
-    # Manually map the columns based on your known sheet structure (A, B, C, D)
-    # A=Date, B=Sender, C=Amount, D=Doctor
-    # We skip the header row [0] and map the rest
-    processed_data = []
-    for row in data[1:]:
-        # Ensure row has enough columns
-        if len(row) >= 4:
-            processed_data.append({
-                "Date": row[0],
-                "Sender": row[1],
-                "Amount": row[2],
-                "Doctor": row[3]
-            })
-            
-    df = pd.DataFrame(processed_data)
+    headers = data[0]
+    rows = data[1:]
+    # Clean headers (remove extra spaces)
+    cleaned_headers = [h.strip() for h in headers]
+    df = pd.DataFrame(rows, columns=cleaned_headers)
     return df
 
+# --- DASHBOARD ---
 def main():
     st.set_page_config(page_title="Kitchener Finance", layout="wide")
     
     if st.sidebar.button("⬅️ Back to Home"):
         st.switch_page("Home.py")
+
     if st.sidebar.button("🔄 FORCE REFRESH"):
         st.cache_data.clear()
         st.rerun()
@@ -64,9 +56,24 @@ def main():
     st.title("📍 Kitchener Payments")
 
     if not df.empty:
-        # 1. Clean Data
+        # --- SMART COLUMN FINDER (The Fix) ---
+        # Finds the actual column name even if it's "Doctor (Tripic)"
+        doc_col = None
+        sender_col = None
+        
+        for col in df.columns:
+            if "doctor" in col.lower() or "doc" in col.lower():
+                doc_col = col
+            if "sender" in col.lower():
+                sender_col = col
+        
+        # Fallback if not found
+        if not doc_col: doc_col = "Doctor"
+        if not sender_col: sender_col = "Sender"
+
+        # 1. CLEAN DATA
         df = df[df['Date'].astype(str).str.strip() != ""]
-        # Force Date format DD/MM/YYYY
+        # Force Canadian Date Format (Day First)
         df['Date Object'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
         df = df.dropna(subset=['Date Object'])
         
@@ -74,7 +81,7 @@ def main():
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
 
-        # 2. Filters
+        # 2. FILTERS
         st.sidebar.header("📅 Time Filters")
         available_years = sorted(df['Year'].unique(), reverse=True)
         selected_year = st.sidebar.selectbox("Select Year", available_years)
@@ -85,34 +92,52 @@ def main():
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
         view_options = ["Current Year (Overview)", "Last X Months"] + available_months
+        
         current_month_name = datetime.now().strftime('%B')
-        default_idx = view_options.index(current_month_name) if current_month_name in view_options else 0
+        default_idx = 0
+        if current_month_name in view_options:
+            default_idx = view_options.index(current_month_name)
+            
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
-        # 3. Metrics Logic
+        # 3. LOGIC
         months_divisor = 0
         if selected_view == "Last X Months":
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
-            months_back = st.sidebar.number_input("Enter months", 1, 100, 3) if period_opt == "Custom" else period_opt
-            start_date = datetime.now() - pd.DateOffset(months=months_back)
+            if period_opt == "Custom":
+                months_back = st.sidebar.number_input("Enter number of months", min_value=1, value=3)
+            else:
+                months_back = period_opt
+            
+            today = datetime.now()
+            start_date = today - pd.DateOffset(months=months_back)
             display_df = df[df['Date Object'] >= start_date]
             view_title = f"Income: Last {months_back} Months"
             months_divisor = months_back
+            
         elif selected_view == "Current Year (Overview)":
-            display_df = df[df['Year'] == datetime.now().year]
-            view_title = f"Financial Overview: {datetime.now().year}"
-            months_divisor = datetime.now().month
+            current_year = datetime.now().year
+            display_df = df[df['Year'] == current_year]
+            view_title = f"Financial Overview: {current_year}"
+            if selected_year == current_year:
+                months_divisor = datetime.now().month
+            else:
+                months_divisor = 12
         else:
             display_df = df[df['Month_Name'] == selected_view]
-            display_df = display_df[display_df['Year'] == selected_year]
-            view_title = f"Activity in {selected_view} {selected_year}"
+            view_title = f"Activity in {selected_view}"
             months_divisor = 0
 
-        # 4. Metrics Calculation
+        # 4. METRICS (Using Smart Columns)
         total_income = display_df['Amount'].sum()
-        # Exact matching for Doctor names since we know them now
-        tripic_total = display_df[display_df['Doctor'].str.contains("Tripic", case=False, na=False)]['Amount'].sum()
-        cartagena_total = display_df[display_df['Doctor'].str.contains("Cartagena", case=False, na=False)]['Amount'].sum()
+        
+        # Calculate Doctors using the SMART column name
+        if doc_col in display_df.columns:
+            tripic_total = display_df[display_df[doc_col].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
+            cartagena_total = display_df[display_df[doc_col].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
+        else:
+            tripic_total = 0
+            cartagena_total = 0
 
         st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
         
@@ -126,28 +151,42 @@ def main():
         date_range = f"{display_df['Date Object'].min().date()} to {display_df['Date Object'].max().date()}" if not display_df.empty else "-"
         m1.metric("Date Range", date_range)
         
-        avg_text_t = f"Avg: ${tripic_total/months_divisor:,.2f}/mo" if months_divisor > 0 else None
-        avg_text_c = f"Avg: ${cartagena_total/months_divisor:,.2f}/mo" if months_divisor > 0 else None
-        
-        m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}", avg_text_t)
-        m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}", avg_text_c)
+        # Averages for Doctors
+        if months_divisor > 0:
+            m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}", f"Avg: ${tripic_total/months_divisor:,.2f}/mo")
+            m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}", f"Avg: ${cartagena_total/months_divisor:,.2f}/mo")
+        else:
+            m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}")
+            m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}")
 
         st.divider()
         
-        # 5. Mobile View & Table
+        # 5. MOBILE CARD VIEW
         use_card_view = st.toggle("📱 Mobile Card View", value=True)
         
         if use_card_view:
+            st.caption("Showing recent transactions")
             for index, row in display_df.sort_values(by="Date Object", ascending=False).iterrows():
                 with st.container(border=True):
                     c1, c2 = st.columns([3, 2])
-                    c1.write(f"**{row['Sender']}**")
+                    # Uses SMART Column
+                    sender = row.get(sender_col, "Unknown")
+                    c1.write(f"**{sender}**")
+                    
                     date_str = row['Date Object'].strftime('%Y-%m-%d')
-                    c1.caption(f"📅 {date_str} • {row['Doctor']}")
-                    c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${row['Amount']:,.2f}</h3>", unsafe_allow_html=True)
+                    # Uses SMART Column
+                    doc = row.get(doc_col, "Unknown")
+                    c1.caption(f"📅 {date_str} • {doc}")
+                    
+                    amt = row.get('Amount', 0)
+                    c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${amt:,.2f}</h3>", unsafe_allow_html=True)
         else:
+            # Table View
+            display_cols = ["Date", sender_col, "Amount", doc_col]
+            cols_to_show = [c for c in display_cols if c in display_df.columns]
+            
             st.dataframe(
-                display_df.sort_values(by="Date Object", ascending=False)[["Date", "Sender", "Amount", "Doctor"]], 
+                display_df.sort_values(by="Date Object", ascending=False)[cols_to_show], 
                 use_container_width=True, 
                 hide_index=True
             )
