@@ -64,11 +64,8 @@ def main():
 
         # --- SIDEBAR ---
         st.sidebar.header("📅 Time Filters")
-        available_years = sorted(df['Year'].unique(), reverse=True)
-        selected_year = st.sidebar.selectbox("Select Year", available_years)
-        year_df = df[df['Year'] == selected_year]
-
-        available_months = list(year_df['Month_Name'].unique())
+        
+        available_months = list(df['Month_Name'].unique())
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
@@ -82,7 +79,7 @@ def main():
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
         # LOGIC FOR MONTHS BACK
-        months_divisor = 0 # Used to calculate averages
+        months_divisor = 0 
         
         if selected_view == "Last X Months":
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
@@ -101,18 +98,12 @@ def main():
             current_year = datetime.now().year
             display_df = df[df['Year'] == current_year]
             view_title = f"Financial Overview: {current_year}"
-            
-            # If viewing current year, divisor is current month number (e.g. Nov = 11)
-            # If viewing past year, divisor is 12
-            if selected_year == current_year:
-                months_divisor = datetime.now().month
-            else:
-                months_divisor = 12
+            months_divisor = datetime.now().month
             
         else:
             display_df = df[df['Month_Name'] == selected_view]
             view_title = f"Activity in {selected_view}"
-            months_divisor = 0 # No average for single month view
+            months_divisor = 0 
 
         # --- METRICS ---
         total_income = display_df['Amount'].sum()
