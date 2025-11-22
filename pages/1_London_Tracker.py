@@ -44,7 +44,6 @@ def main():
         
     st.title("🏙️ London, ON Patient Tracker")
 
-    # --- DOCTOR SELECTOR ---
     st.sidebar.header("👨‍⚕️ Select Doctor")
     selected_doc_name = st.sidebar.selectbox("Choose Dashboard:", list(DOCTOR_SHEETS.keys()))
     target_sheet = DOCTOR_SHEETS[selected_doc_name]
@@ -156,4 +155,67 @@ def main():
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Patients", f"{total_patients}")
-        if total_
+        
+        if total_patients > 0:
+            m2.metric("Avg per Patient", f"${total_period_income/total_patients:,.2f}")
+        else:
+            m2.metric("Avg per Patient", "$0.00")
+            
+        m3.metric("Date Range", f"{display_df['Date Object'].min().date()} to {display_df['Date Object'].max().date()}" if not display_df.empty else "-")
+
+        st.divider()
+
+        # If specific month, show pay periods
+        if months_divisor == 0: 
+             period_1 = display_df[display_df['Date Object'].dt.day <= 15]
+             period_2 = display_df[display_df['Date Object'].dt.day > 15]
+             
+             c1, c2 = st.columns(2)
+             c1.metric("🗓️ 1st - 15th", f"${period_1['Fee'].sum():,.2f}", f"{len(period_1)} patients")
+             c2.metric("🗓️ 16th - End", f"${period_2['Fee'].sum():,.2f}", f"{len(period_2)} patients")
+             st.divider()
+
+        # --- MOBILE CARD VIEW ---
+        use_card_view = st.toggle("📱 Mobile Card View", value=True)
+        
+        if use_card_view:
+            st.caption("Showing recent activity")
+            for index, row in display_df.sort_values(by="Date Object", ascending=False).iterrows():
+                with st.container(border=True):
+                    c1, c2 = st.columns([3, 2])
+                    # SAFE ACCESS using .get()
+                    patient_name = row.get(name_col, "Patient")
+                    c1.write(f"**{str(patient_name)}**")
+                    
+                    encounter_type = str(row.get("Type of encounter", "Unknown"))
+                    date_str = row['Date Object'].strftime('%Y-%m-%d')
+                    c1.caption(f"📅 {date_str} • {encounter_type}")
+                    
+                    fee_val = row.get('Fee', 0)
+                    c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${fee_val:.0f}</h3>", unsafe_allow_html=True)
+                    
+                    # Finalized check
+                    finalized_col = None
+                    for col in df.columns:
+                        if "finalized" in col.lower():
+                            finalized_col = col
+                            break
+                    
+                    if finalized_col:
+                        status = str(row[finalized_col]).strip()
+                        if status and status.lower() != "yes":
+                            st.caption(f"⚠️ Report: {status}")
+        else:
+            # Table View
+            potential_cols = [date_col, name_col, "Type of encounter", "Fee", "finalized report ?", "Doctor"]
+            final_cols = [c for c in potential_cols if c in display_df.columns]
+            st.dataframe(
+                display_df.sort_values(by="Date Object", ascending=False)[final_cols], 
+                use_container_width=True, 
+                hide_index=True
+            )
+    else:
+        st.info("No data found.")
+
+if __name__ == "__main__":
+    main()
