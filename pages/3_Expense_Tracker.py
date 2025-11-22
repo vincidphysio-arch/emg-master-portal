@@ -28,7 +28,8 @@ def analyze_receipt(image):
         response = model.generate_content([prompt, image])
         clean_json = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_json)
-    except:
+    except Exception as e:
+        st.error(f"AI Error: {e}")
         return None
 
 # --- CONNECT TO GOOGLE ---
@@ -53,10 +54,11 @@ def get_expense_data():
         data = worksheet.get_all_values()
         
         structured_data = []
+        # Skip header
         for row in data[1:]:
             while len(row) < 8: row.append("")
             
-            # HYBRID LOGIC (Old vs New Data)
+            # HYBRID LOGIC
             date_val = row[1]
             cat_val = row[2]
             amt_val = row[3]
@@ -112,46 +114,85 @@ def main():
 
     st.title("💸 AI Expense Tracker")
 
-    # FORM
+    # Initialize Session State
     if 'form_date' not in st.session_state: st.session_state['form_date'] = date.today()
     if 'form_amount' not in st.session_state: st.session_state['form_amount'] = 0.00
     if 'form_merch' not in st.session_state: st.session_state['form_merch'] = ""
+    if 'form_cat_index' not in st.session_state: st.session_state['form_cat_index'] = 6 # Default Other
 
+    # --- 1. AI SCANNER ---
     with st.expander("📸 Scan Receipt (AI)", expanded=True):
-        uploaded_file = st.file_uploader("Upload", type=['jpg','png','jpeg'], label_visibility="collapsed")
+        uploaded_file = st.file_uploader("Upload Receipt", type=['jpg','png','jpeg'], label_visibility="collapsed")
+        
         if uploaded_file:
+            # Display image small
+            st.image(uploaded_file, width=150)
+            
             if st.button("✨ Extract Data"):
-                with st.spinner("Analyzing..."):
+                with st.spinner("Reading receipt..."):
                     data = analyze_receipt(Image.open(uploaded_file))
+                    
                     if data:
+                        # 1. Amount
                         st.session_state['form_amount'] = float(data.get('Amount', 0))
-                        st.session_state['form_merch'] = data.get('Merchant', '')
-                        try: st.session_state['form_date'] = datetime.strptime(data.get('Date'), "%Y-%m-%d").date()
-                        except: pass
                         
+                        # 2. Merchant
+                        st.session_state['form_merch'] = data.get('Merchant', '')
+                        
+                        # 3. Date
+                        try: 
+                            st.session_state['form_date'] = datetime.strptime(data.get('Date'), "%Y-%m-%d").date()
+                        except: 
+                            pass
+                        
+                        # 4. Category Matching
+                        ai_cat = data.get('Category', '').lower()
+                        # List must match the selectbox below exactly
+                        cat_options = ["Travel/Parking", "Medical Supplies", "Professional Fees", "Education", "Office/Software", "Meals", "Other"]
+                        
+                        found_index = 6 # Default Other
+                        if "fuel" in ai_cat or "gas" in ai_cat or "parking" in ai_cat: found_index = 0
+                        elif "medical" in ai_cat: found_index = 1
+                        elif "fee" in ai_cat: found_index = 2
+                        elif "edu" in ai_cat: found_index = 3
+                        elif "soft" in ai_cat or "office" in ai_cat: found_index = 4
+                        elif "meal" in ai_cat or "food" in ai_cat: found_index = 5
+                        
+                        st.session_state['form_cat_index'] = found_index
+                        
+                        st.success("✅ Data Extracted! Check the form below.")
+                        st.rerun() # FORCE REFRESH TO SHOW DATA
+
+    # --- 2. VERIFY FORM ---
+    st.divider()
+    st.subheader("📝 Verify & Save")
+    
     with st.form("main_form"):
         c1, c2 = st.columns(2)
         with c1:
-            d = st.date_input("Date", st.session_state['form_date'])
-            c = st.selectbox("Category", ["Travel/Parking", "Medical Supplies", "Professional Fees", "Education", "Office/Software", "Meals", "Gas", "Food", "Other"], index=8)
-            a = st.number_input("Amount", value=st.session_state['form_amount'])
+            d = st.date_input("Date", value=st.session_state['form_date'])
+            c = st.selectbox("Category", 
+                             ["Travel/Parking", "Medical Supplies", "Professional Fees", "Education", "Office/Software", "Meals", "Other"], 
+                             index=st.session_state['form_cat_index'])
+            a = st.number_input("Amount", value=st.session_state['form_amount'], step=0.01)
         with c2:
             l = st.selectbox("Location", ["General / Both", "London", "Kitchener"])
             desc = st.text_input("Description", value=st.session_state['form_merch'])
         
-        if st.form_submit_button("Save"):
-            add_expense(d, c, a, l, desc)
+        if st.form_submit_button("💾 Save Expense"):
+            receipt_note = "AI Scanned" if uploaded_file else "Manual"
+            add_expense(d, c, a, l, f"{desc} ({receipt_note})")
             st.success("Saved!")
+            
+            # Reset Form
+            st.session_state['form_amount'] = 0.0
+            st.session_state['form_merch'] = ""
             st.cache_data.clear()
             st.rerun()
 
     st.divider()
 
-    # DATA DISPLAY
-    if st.sidebar.button("🔄 FORCE REFRESH"):
-        st.cache_data.clear()
-        st.rerun()
-
+    # --- 3. DATA DISPLAY ---
     try:
         df = get_expense_data()
     except:
@@ -174,32 +215,7 @@ def main():
         m3.metric("Kitchener", f"${y_df[y_df['Location'].str.contains('Kitch', case=False, na=False)]['Amount'].sum():,.2f}")
         m4.metric("General", f"${y_df[y_df['Location'].str.contains('General', case=False, na=False)]['Amount'].sum():,.2f}")
         
-        st.divider()
-
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.subheader("📊 Breakdown")
-            if not y_df.empty:
-                # 1. Group Data by Category
-                cat_totals = y_df.groupby("Category")['Amount'].sum().reset_index()
-                cat_totals = cat_totals.sort_values(by="Amount", ascending=False)
-                
-                # 2. Display as Clean Table
-                st.dataframe(
-                    cat_totals, 
-                    use_container_width=True, 
-                    hide_index=True,
-                    column_config={
-                        "Category": "Category",
-                        "Amount": st.column_config.NumberColumn("Total Spent", format="$%.2f")
-                    }
-                )
-                # 3. Display as Chart (Optional, can remove if you prefer just table)
-                st.bar_chart(data=cat_totals, x="Category", y="Amount")
-        
-        with c2:
-            st.subheader("📝 Expense Log")
-            st.dataframe(y_df.sort_values('Date Object', ascending=False)[["Date", "Category", "Amount", "Location", "Description"]], use_container_width=True, hide_index=True)
+        st.dataframe(y_df.sort_values('Date Object', ascending=False)[["Date", "Category", "Amount", "Location", "Description"]], use_container_width=True, hide_index=True)
 
 if __name__ == "__main__":
     main()
