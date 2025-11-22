@@ -27,6 +27,7 @@ def get_data():
     sh = gc.open(SHEET_NAME)
     worksheet = sh.worksheet("Payments")
     
+    # SAFE LOAD (Headers)
     data = worksheet.get_all_values()
     headers = data[0]
     rows = data[1:]
@@ -64,18 +65,10 @@ def main():
 
         # --- SIDEBAR ---
         st.sidebar.header("📅 Time Filters")
-        
         available_years = sorted(df['Year'].unique(), reverse=True)
         selected_year = st.sidebar.selectbox("Select Year", available_years)
-        
-        # Data for Selected Year
         year_df = df[df['Year'] == selected_year]
-        
-        # Data for Previous Year (for YoY comparison)
-        prev_year = selected_year - 1
-        prev_year_df = df[df['Year'] == prev_year]
 
-        # MONTH SORTING
         available_months = list(year_df['Month_Name'].unique())
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
@@ -89,12 +82,9 @@ def main():
             
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
-        # LOGIC & METRICS
+        # LOGIC
         months_divisor = 0
-        metric_delta = None # This holds the green/red percentage
-        
         if selected_view == "Last X Months":
-            # (Code for Last X Months remains the same)
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
             if period_opt == "Custom":
                 months_back = st.sidebar.number_input("Enter number of months", min_value=1, value=3)
@@ -109,67 +99,29 @@ def main():
             
         elif selected_view == "Current Year (Overview)":
             current_year = datetime.now().year
-            display_df = year_df
-            view_title = f"Financial Overview: {selected_year}"
-            
-            # YoY CALCULATION
-            current_total = display_df['Amount'].sum()
-            prev_total = prev_year_df['Amount'].sum()
-            
-            # Only calculate if we have data for previous year
-            if prev_total > 0:
-                delta_val = current_total - prev_total
-                delta_pct = (delta_val / prev_total) * 100
-                metric_delta = f"{delta_pct:,.1f}% vs {prev_year}"
-            else:
-                metric_delta = "No prior year data"
-
+            display_df = df[df['Year'] == current_year]
+            view_title = f"Financial Overview: {current_year}"
             if selected_year == current_year:
                 months_divisor = datetime.now().month
             else:
                 months_divisor = 12
-            
         else:
-            # Specific Month View
             display_df = df[df['Month_Name'] == selected_view]
-            # Filter further to ensure it matches the selected YEAR
-            display_df = display_df[display_df['Year'] == selected_year]
-            view_title = f"Activity in {selected_view} {selected_year}"
-            
-            # MoM Calculation (Compare to same month last year)
-            current_month_total = display_df['Amount'].sum()
-            prev_month_df = prev_year_df[prev_year_df['Month_Name'] == selected_view]
-            prev_month_total = prev_month_df['Amount'].sum()
-            
-            if prev_month_total > 0:
-                delta_val = current_month_total - prev_month_total
-                delta_pct = (delta_val / prev_month_total) * 100
-                metric_delta = f"{delta_pct:,.1f}% vs {selected_view} {prev_year}"
-            
-            months_divisor = 0 
+            view_title = f"Activity in {selected_view}"
+            months_divisor = 0
 
-        # --- DISPLAY METRICS ---
+        # --- METRICS ---
         total_income = display_df['Amount'].sum()
         tripic_total = display_df[display_df['Doctor'].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
         cartagena_total = display_df[display_df['Doctor'].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
 
         st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
         
-        # HEADLINE METRIC WITH DELTA
         if months_divisor > 0:
             monthly_avg = total_income / months_divisor
-            st.metric(
-                label="Total Income", 
-                value=f"${total_income:,.2f}", 
-                delta=metric_delta,
-                help=f"Average: ${monthly_avg:,.2f}/mo"
-            )
+            st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_income:,.2f} <span style='font-size: 0.6em; color: gray;'> (Avg: ${monthly_avg:,.2f}/mo)</span></h1>", unsafe_allow_html=True)
         else:
-            st.metric(
-                label="Total Income", 
-                value=f"${total_income:,.2f}", 
-                delta=metric_delta
-            )
+            st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_income:,.2f}</h1>", unsafe_allow_html=True)
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Date Range", f"{display_df['Date Object'].min().date()} to {display_df['Date Object'].max().date()}" if not display_df.empty else "-")
