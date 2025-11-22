@@ -62,53 +62,65 @@ def main():
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
 
-        # --- SIDEBAR ---
+        # --- SIDEBAR: TIME FILTERS ---
         st.sidebar.header("📅 Time Filters")
-        available_years = sorted(df['Year'].unique(), reverse=True)
-        selected_year = st.sidebar.selectbox("Select Year", available_years)
-        year_df = df[df['Year'] == selected_year]
-
-        available_months = list(year_df['Month_Name'].unique())
+        
+        available_months = list(df['Month_Name'].unique())
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
-        view_options = ["All Months"] + available_months
+        view_options = ["Current Year (Overview)", "Last X Months"] + available_months
         
-        # FIX: Correctly find the current month index
         current_month_name = datetime.now().strftime('%B')
         default_idx = 0
         if current_month_name in view_options:
             default_idx = view_options.index(current_month_name)
             
-        selected_month_view = st.sidebar.selectbox("Select Month", view_options, index=default_idx)
+        selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
-        # --- YEARLY METRICS ---
-        year_total = year_df['Amount'].sum()
-        year_tripic = year_df[year_df['Doctor'].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
-        year_cartagena = year_df[year_df['Doctor'].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
+        # LOGIC FOR "LAST X MONTHS"
+        months_back = 0
+        if selected_view == "Last X Months":
+            period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
+            if period_opt == "Custom":
+                months_back = st.sidebar.number_input("Enter number of months", min_value=1, value=3)
+            else:
+                months_back = period_opt
 
-        st.markdown(f"### 💰 Kitchener Overview: {selected_year}")
-        ym1, ym2, ym3 = st.columns(3)
-        ym1.metric("Total Income", f"${year_total:,.2f}")
-        ym2.metric("👨‍⚕️ Dr. Tripic", f"${year_tripic:,.2f}")
-        ym3.metric("👩‍⚕️ Dr. Cartagena", f"${year_cartagena:,.2f}")
+        # --- FILTERING LOGIC ---
+        if selected_view == "Current Year (Overview)":
+            current_year = datetime.now().year
+            display_df = df[df['Year'] == current_year]
+            view_title = f"Financial Overview: {current_year}"
+            
+        elif selected_view == "Last X Months":
+            today = datetime.now()
+            start_date = today - pd.DateOffset(months=months_back)
+            display_df = df[df['Date Object'] >= start_date]
+            view_title = f"Income: Last {months_back} Months"
+            
+        else:
+            # Specific Month
+            display_df = df[df['Month_Name'] == selected_view]
+            view_title = f"Activity in {selected_view}"
+
+        # --- METRICS ---
+        total_income = display_df['Amount'].sum()
+        tripic_total = display_df[display_df['Doctor'].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
+        cartagena_total = display_df[display_df['Doctor'].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
+
+        # TITLES
+        st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_income:,.2f}</h1>", unsafe_allow_html=True)
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Date Range", f"{display_df['Date Object'].min().date()} to {display_df['Date Object'].max().date()}" if not display_df.empty else "-")
+        m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}")
+        m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}")
 
         st.divider()
-
-        # --- MONTHLY DETAILS ---
-        if selected_month_view == "All Months":
-            display_df = year_df
-            view_title = f"All Activity in {selected_year}"
-        else:
-            display_df = year_df[year_df['Month_Name'] == selected_month_view]
-            view_title = f"Activity in {selected_month_view} {selected_year}"
-
-        month_total = display_df['Amount'].sum()
         
-        # RED TITLE
-        st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
-        st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${month_total:,.2f}</h1>", unsafe_allow_html=True)
-        
+        # TABLE
         display_cols = ["Date", "Sender", "Amount", "Doctor"]
         cols_to_show = [c for c in display_cols if c in display_df.columns]
         
