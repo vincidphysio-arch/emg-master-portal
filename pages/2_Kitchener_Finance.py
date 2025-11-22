@@ -8,7 +8,6 @@ from datetime import datetime
 SHEET_NAME = 'EMG Payments Kitchener'
 CREDENTIALS_FILE = 'credentials.json'
 
-# --- CONNECT TO GOOGLE ---
 @st.cache_resource
 def get_connection():
     try:
@@ -27,12 +26,24 @@ def get_data():
     sh = gc.open(SHEET_NAME)
     worksheet = sh.worksheet("Payments")
     
+    # Force standard loading
     data = worksheet.get_all_values()
-    headers = data[0]
-    rows = data[1:]
-    # Clean headers (remove extra spaces)
-    cleaned_headers = [h.strip() for h in headers]
-    df = pd.DataFrame(rows, columns=cleaned_headers)
+    
+    # Manually map the columns based on your known sheet structure (A, B, C, D)
+    # A=Date, B=Sender, C=Amount, D=Doctor
+    # We skip the header row [0] and map the rest
+    processed_data = []
+    for row in data[1:]:
+        # Ensure row has enough columns
+        if len(row) >= 4:
+            processed_data.append({
+                "Date": row[0],
+                "Sender": row[1],
+                "Amount": row[2],
+                "Doctor": row[3]
+            })
+            
+    df = pd.DataFrame(processed_data)
     return df
 
 def main():
@@ -53,25 +64,9 @@ def main():
     st.title("📍 Kitchener Payments")
 
     if not df.empty:
-        # --- SMART COLUMN FINDER ---
-        # We find the actual name of your headers dynamically
-        doc_col = None
-        sender_col = None
-        
-        for col in df.columns:
-            if "doctor" in col.lower() or "doc" in col.lower():
-                doc_col = col
-            if "sender" in col.lower():
-                sender_col = col
-        
-        # Fallback if not found
-        if not doc_col: doc_col = "Doctor"
-        if not sender_col: sender_col = "Sender"
-
         # 1. Clean Data
         df = df[df['Date'].astype(str).str.strip() != ""]
-        
-        # *** FIX 1: FORCE CANADIAN DATE FORMAT (Day First) ***
+        # Force Date format DD/MM/YYYY
         df['Date Object'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
         df = df.dropna(subset=['Date Object'])
         
@@ -90,14 +85,11 @@ def main():
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
         view_options = ["Current Year (Overview)", "Last X Months"] + available_months
-        
         current_month_name = datetime.now().strftime('%B')
-        default_idx = 0
-        if current_month_name in view_options:
-            default_idx = view_options.index(current_month_name)
+        default_idx = view_options.index(current_month_name) if current_month_name in view_options else 0
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
-        # 3. Logic
+        # 3. Metrics Logic
         months_divisor = 0
         if selected_view == "Last X Months":
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
@@ -116,16 +108,11 @@ def main():
             view_title = f"Activity in {selected_view} {selected_year}"
             months_divisor = 0
 
-        # 4. Metrics (Using SMART columns)
+        # 4. Metrics Calculation
         total_income = display_df['Amount'].sum()
-        
-        tripic_total = 0
-        cartagena_total = 0
-        
-        # Use the actual column name we found earlier
-        if doc_col in display_df.columns:
-            tripic_total = display_df[display_df[doc_col].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
-            cartagena_total = display_df[display_df[doc_col].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
+        # Exact matching for Doctor names since we know them now
+        tripic_total = display_df[display_df['Doctor'].str.contains("Tripic", case=False, na=False)]['Amount'].sum()
+        cartagena_total = display_df[display_df['Doctor'].str.contains("Cartagena", case=False, na=False)]['Amount'].sum()
 
         st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
         
@@ -154,27 +141,13 @@ def main():
             for index, row in display_df.sort_values(by="Date Object", ascending=False).iterrows():
                 with st.container(border=True):
                     c1, c2 = st.columns([3, 2])
-                    # Uses SMART Column
-                    sender = row.get(sender_col, "Unknown")
-                    c1.write(f"**{sender}**")
-                    
+                    c1.write(f"**{row['Sender']}**")
                     date_str = row['Date Object'].strftime('%Y-%m-%d')
-                    # Uses SMART Column
-                    doc = row.get(doc_col, "Unknown")
-                    c1.caption(f"📅 {date_str} • {doc}")
-                    
-                    amt = row.get('Amount', 0)
-                    c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${amt:,.2f}</h3>", unsafe_allow_html=True)
+                    c1.caption(f"📅 {date_str} • {row['Doctor']}")
+                    c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${row['Amount']:,.2f}</h3>", unsafe_allow_html=True)
         else:
-            # *** FIX 2: USE ACTUAL COLUMN NAMES IN TABLE ***
-            # We use the variables doc_col and sender_col that we found earlier
-            display_cols = ["Date", sender_col, "Amount", doc_col]
-            
-            # Ensure they exist in the dataframe before asking to display them
-            final_cols = [c for c in display_cols if c in display_df.columns]
-            
             st.dataframe(
-                display_df.sort_values(by="Date Object", ascending=False)[final_cols], 
+                display_df.sort_values(by="Date Object", ascending=False)[["Date", "Sender", "Amount", "Doctor"]], 
                 use_container_width=True, 
                 hide_index=True
             )
