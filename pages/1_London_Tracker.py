@@ -44,6 +44,7 @@ def main():
         
     st.title("🏙️ London, ON Patient Tracker")
 
+    # --- DOCTOR SELECTOR ---
     st.sidebar.header("👨‍⚕️ Select Doctor")
     selected_doc_name = st.sidebar.selectbox("Choose Dashboard:", list(DOCTOR_SHEETS.keys()))
     target_sheet = DOCTOR_SHEETS[selected_doc_name]
@@ -90,73 +91,16 @@ def main():
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
         
-        # --- SIDEBAR ---
+        # --- SIDEBAR: TIME FILTERS ---
         st.sidebar.header("📅 Time Filters")
-        available_years = sorted(df['Year'].unique(), reverse=True)
-        selected_year = st.sidebar.selectbox("Select Year", available_years)
-        year_df = df[df['Year'] == selected_year]
-
-        available_months = list(year_df['Month_Name'].unique())
+        
+        # Get available months for dropdown
+        available_months = list(df['Month_Name'].unique())
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
-        view_options = ["All Months"] + available_months
+        # VIEW OPTIONS
+        view_options = ["Current Year (Overview)", "Last X Months"] + available_months
         
-        # FIX: Correctly find the current month index without adding +1
+        # Default logic
         current_month_name = datetime.now().strftime('%B')
-        default_idx = 0
-        if current_month_name in view_options:
-            default_idx = view_options.index(current_month_name)
-            
-        selected_month_view = st.sidebar.selectbox("Select Month", view_options, index=default_idx)
-
-        # --- YEARLY METRICS ---
-        year_total = year_df['Fee'].sum()
-        year_patients = len(year_df)
-        
-        ym1, ym2, ym3 = st.columns(3)
-        ym1.metric(f"Total London Income ({selected_year})", f"${year_total:,.2f}")
-        ym2.metric("Total Patients (Year)", f"{year_patients}")
-        ym3.metric("Avg per Patient", f"${year_total/year_patients:,.2f}" if year_patients > 0 else "$0.00")
-
-        st.divider()
-
-        # --- MONTHLY DETAILS ---
-        if selected_month_view == "All Months":
-            display_df = year_df
-            view_title = f"All Activity in {selected_year}"
-            month_total = display_df['Fee'].sum()
-            
-            # RED TITLE
-            st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
-            st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${month_total:,.2f}</h1>", unsafe_allow_html=True)
-            
-        else:
-            display_df = year_df[year_df['Month_Name'] == selected_month_view]
-            view_title = f"Details for {selected_month_view} {selected_year}"
-            
-            period_1 = display_df[display_df['Date Object'].dt.day <= 15]
-            period_2 = display_df[display_df['Date Object'].dt.day > 15]
-            
-            # RED TITLE
-            st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
-            st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${display_df['Fee'].sum():,.2f}</h1>", unsafe_allow_html=True)
-            
-            col1, col2 = st.columns(2)
-            col1.metric("🗓️ 1st - 15th", f"${period_1['Fee'].sum():,.2f}", f"{len(period_1)} patients")
-            col2.metric("🗓️ 16th - End", f"${period_2['Fee'].sum():,.2f}", f"{len(period_2)} patients")
-
-        # Table Display
-        potential_cols = [date_col, name_col, "Type of encounter", "Fee", "finalized report ?", "Doctor"]
-        final_cols = [c for c in potential_cols if c in display_df.columns]
-        
-        st.dataframe(
-            display_df.sort_values(by="Date Object", ascending=False)[final_cols], 
-            use_container_width=True, 
-            hide_index=True
-        )
-    else:
-        st.info("No data found.")
-
-if __name__ == "__main__":
-    main()
