@@ -9,7 +9,7 @@ from PIL import Image
 # --- CONFIGURATION ---
 SHEET_NAME = 'EMG Payments Kitchener'
 CREDENTIALS_FILE = 'credentials.json'
-WORKSHEET_NAME = 'Expenses' # Ensure this matches your tab name
+WORKSHEET_NAME = 'Expenses'
 
 # --- SETUP AI ---
 if "GEMINI_API_KEY" in st.secrets:
@@ -53,29 +53,21 @@ def get_expense_data():
         data = worksheet.get_all_values()
         
         structured_data = []
-        
-        # Skip header
         for row in data[1:]:
-            # Pad row to avoid index errors
             while len(row) < 8: row.append("")
             
-            # --- HYBRID LOGIC: DETECT OLD VS NEW DATA ---
-            
-            # Default: Assume NEW Form Data (Date in Col B [1], Amount in Col D [3])
+            # HYBRID LOGIC (Old vs New Data)
             date_val = row[1]
             cat_val = row[2]
             amt_val = row[3]
             loc_val = row[4]
-            desc_val = row[2] # Default desc is category
+            desc_val = row[2]
             receipt_val = row[5]
 
-            # Check for OLD Data (Date in Col A [0], Amount in Col C [2])
-            # We check if Col C looks like a number
+            # Check for OLD Data (Date in Col A)
             is_old_data = False
             try:
-                # Try to convert Col C to float
                 float(str(row[2]).replace('$','').replace(',',''))
-                # If successful, and Col B is NOT a date (it's likely a category string), it's old data
                 if len(str(row[1])) > 0 and not str(row[1])[0].isdigit():
                     is_old_data = True
             except:
@@ -86,8 +78,6 @@ def get_expense_data():
                 cat_val = row[1]
                 amt_val = row[2]
                 desc_val = row[3]
-                # Payment Method was row[4], Location was row[5] (maybe)
-                # We map loosely here
                 loc_val = row[5] 
                 receipt_val = ""
 
@@ -102,7 +92,6 @@ def get_expense_data():
         
         df = pd.DataFrame(structured_data)
         return df
-
     except gspread.exceptions.WorksheetNotFound:
         st.error(f"❌ Tab '{WORKSHEET_NAME}' not found.")
         st.stop()
@@ -123,10 +112,9 @@ def main():
 
     st.title("💸 AI Expense Tracker")
 
-    # --- FORM ---
+    # FORM
     if 'form_date' not in st.session_state: st.session_state['form_date'] = date.today()
     if 'form_amount' not in st.session_state: st.session_state['form_amount'] = 0.00
-    if 'form_cat' not in st.session_state: st.session_state['form_cat'] = "Other"
     if 'form_merch' not in st.session_state: st.session_state['form_merch'] = ""
 
     with st.expander("📸 Scan Receipt (AI)", expanded=True):
@@ -138,7 +126,6 @@ def main():
                     if data:
                         st.session_state['form_amount'] = float(data.get('Amount', 0))
                         st.session_state['form_merch'] = data.get('Merchant', '')
-                        # Try date parse
                         try: st.session_state['form_date'] = datetime.strptime(data.get('Date'), "%Y-%m-%d").date()
                         except: pass
                         
@@ -146,7 +133,7 @@ def main():
         c1, c2 = st.columns(2)
         with c1:
             d = st.date_input("Date", st.session_state['form_date'])
-            c = st.selectbox("Category", ["Travel/Parking", "Medical Supplies", "Professional Fees", "Education", "Office/Software", "Meals", "Other"], index=6)
+            c = st.selectbox("Category", ["Travel/Parking", "Medical Supplies", "Professional Fees", "Education", "Office/Software", "Meals", "Gas", "Food", "Other"], index=8)
             a = st.number_input("Amount", value=st.session_state['form_amount'])
         with c2:
             l = st.selectbox("Location", ["General / Both", "London", "Kitchener"])
@@ -160,7 +147,11 @@ def main():
 
     st.divider()
 
-    # --- DATA ---
+    # DATA DISPLAY
+    if st.sidebar.button("🔄 FORCE REFRESH"):
+        st.cache_data.clear()
+        st.rerun()
+
     try:
         df = get_expense_data()
     except:
@@ -183,7 +174,32 @@ def main():
         m3.metric("Kitchener", f"${y_df[y_df['Location'].str.contains('Kitch', case=False, na=False)]['Amount'].sum():,.2f}")
         m4.metric("General", f"${y_df[y_df['Location'].str.contains('General', case=False, na=False)]['Amount'].sum():,.2f}")
         
-        st.dataframe(y_df.sort_values('Date Object', ascending=False)[["Date", "Category", "Amount", "Location", "Description"]], use_container_width=True, hide_index=True)
+        st.divider()
+
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.subheader("📊 Breakdown")
+            if not y_df.empty:
+                # 1. Group Data by Category
+                cat_totals = y_df.groupby("Category")['Amount'].sum().reset_index()
+                cat_totals = cat_totals.sort_values(by="Amount", ascending=False)
+                
+                # 2. Display as Clean Table
+                st.dataframe(
+                    cat_totals, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    column_config={
+                        "Category": "Category",
+                        "Amount": st.column_config.NumberColumn("Total Spent", format="$%.2f")
+                    }
+                )
+                # 3. Display as Chart (Optional, can remove if you prefer just table)
+                st.bar_chart(data=cat_totals, x="Category", y="Amount")
+        
+        with c2:
+            st.subheader("📝 Expense Log")
+            st.dataframe(y_df.sort_values('Date Object', ascending=False)[["Date", "Category", "Amount", "Location", "Description"]], use_container_width=True, hide_index=True)
 
 if __name__ == "__main__":
     main()
