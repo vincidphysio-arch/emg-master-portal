@@ -61,7 +61,13 @@ def main():
 
     if not df.empty:
         # 1. CLEAN DATA
-        name_col = 'name' if 'name' in df.columns else 'Name'
+        # Robust Name Finder (Checks for 'name', 'Name', 'Patient Name', 'Patient')
+        name_col = 'name' # Default fallback
+        for col in df.columns:
+            if "name" in col.lower() or "patient" in col.lower():
+                name_col = col
+                break
+        
         if name_col in df.columns:
             df = df[df[name_col].astype(str).str.strip() != ""]
         
@@ -90,9 +96,8 @@ def main():
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
         
-        # --- SIDEBAR: TIME FILTERS ---
+        # --- SIDEBAR ---
         st.sidebar.header("📅 Time Filters")
-        
         available_years = sorted(df['Year'].unique(), reverse=True)
         selected_year = st.sidebar.selectbox("Select Year", available_years)
         year_df = df[df['Year'] == selected_year]
@@ -111,9 +116,7 @@ def main():
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
         # LOGIC
-        months_back = 0
         months_divisor = 0
-
         if selected_view == "Last X Months":
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
             if period_opt == "Custom":
@@ -126,7 +129,7 @@ def main():
             display_df = df[df['Date Object'] >= start_date]
             view_title = f"Income: Last {months_back} Months"
             months_divisor = months_back
-
+            
         elif selected_view == "Current Year (Overview)":
             current_year = datetime.now().year
             display_df = df[df['Year'] == current_year]
@@ -135,16 +138,16 @@ def main():
                 months_divisor = datetime.now().month
             else:
                 months_divisor = 12
-            
         else:
             display_df = df[df['Month_Name'] == selected_view]
-            view_title = f"Details for {selected_view}"
+            view_title = f"Activity in {selected_view}"
             months_divisor = 0
 
         # --- METRICS ---
         total_period_income = display_df['Fee'].sum()
         total_patients = len(display_df)
 
+        # TITLE STYLE MATCHING KITCHENER
         st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
         
         if months_divisor > 0:
@@ -165,7 +168,7 @@ def main():
 
         st.divider()
 
-        # If specific month, show pay periods
+        # If specific month, show pay periods (Like Kitchener style)
         if months_divisor == 0: 
              period_1 = display_df[display_df['Date Object'].dt.day <= 15]
              period_2 = display_df[display_df['Date Object'].dt.day > 15]
@@ -183,8 +186,10 @@ def main():
             for index, row in display_df.sort_values(by="Date Object", ascending=False).iterrows():
                 with st.container(border=True):
                     c1, c2 = st.columns([3, 2])
-                    # SAFE ACCESS using .get()
-                    patient_name = row.get(name_col, "Patient")
+                    
+                    # SMART NAME FINDER
+                    # We use the name_col we found earlier
+                    patient_name = row.get(name_col, "Unknown Patient")
                     c1.write(f"**{str(patient_name)}**")
                     
                     encounter_type = str(row.get("Type of encounter", "Unknown"))
@@ -194,7 +199,6 @@ def main():
                     fee_val = row.get('Fee', 0)
                     c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${fee_val:.0f}</h3>", unsafe_allow_html=True)
                     
-                    # Finalized check
                     finalized_col = None
                     for col in df.columns:
                         if "finalized" in col.lower():
