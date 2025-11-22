@@ -27,13 +27,28 @@ def get_data():
     sh = gc.open(SHEET_NAME)
     worksheet = sh.worksheet("Payments")
     
-    # Safe loading method
+    # Get ALL data from the sheet
     data = worksheet.get_all_values()
-    headers = data[0]
-    rows = data[1:]
-    # Clean headers (remove extra spaces)
-    cleaned_headers = [h.strip() for h in headers]
-    df = pd.DataFrame(rows, columns=cleaned_headers)
+    
+    # --- STRICT POSITION MAPPING ---
+    # We ignore header names and map by Position (A=0, B=1, C=2, D=3)
+    structured_data = []
+    
+    # Skip the header row (index 0)
+    for row in data[1:]:
+        # Make sure the row isn't empty
+        if len(row) >= 4:
+            # Clean up the date (remove time if present)
+            raw_date = row[0]
+            
+            structured_data.append({
+                "Date": raw_date,
+                "Sender": row[1],
+                "Amount": row[2],
+                "Doctor": row[3]
+            })
+            
+    df = pd.DataFrame(structured_data)
     return df
 
 # --- DASHBOARD ---
@@ -56,28 +71,15 @@ def main():
     st.title("📍 Kitchener Payments")
 
     if not df.empty:
-        # --- SMART COLUMN FINDER (The Fix) ---
-        # Finds the actual column name even if it's "Doctor (Tripic)"
-        doc_col = None
-        sender_col = None
-        
-        for col in df.columns:
-            if "doctor" in col.lower() or "doc" in col.lower():
-                doc_col = col
-            if "sender" in col.lower():
-                sender_col = col
-        
-        # Fallback if not found
-        if not doc_col: doc_col = "Doctor"
-        if not sender_col: sender_col = "Sender"
-
         # 1. CLEAN DATA
         df = df[df['Date'].astype(str).str.strip() != ""]
-        # Force Canadian Date Format (Day First)
+        # Force Date Format
         df['Date Object'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
         df = df.dropna(subset=['Date Object'])
         
+        # Clean Amount
         df['Amount'] = pd.to_numeric(df['Amount'].astype(str).str.replace('$','').str.replace(',',''), errors='coerce')
+        
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
 
@@ -116,28 +118,21 @@ def main():
             months_divisor = months_back
             
         elif selected_view == "Current Year (Overview)":
-            current_year = datetime.now().year
-            display_df = df[df['Year'] == current_year]
-            view_title = f"Financial Overview: {current_year}"
-            if selected_year == current_year:
-                months_divisor = datetime.now().month
-            else:
-                months_divisor = 12
+            display_df = df[df['Year'] == datetime.now().year]
+            view_title = f"Financial Overview: {datetime.now().year}"
+            months_divisor = datetime.now().month
         else:
             display_df = df[df['Month_Name'] == selected_view]
-            view_title = f"Activity in {selected_view}"
+            display_df = display_df[display_df['Year'] == selected_year]
+            view_title = f"Activity in {selected_view} {selected_year}"
             months_divisor = 0
 
-        # 4. METRICS (Using Smart Columns)
+        # 4. METRICS (Using Strict Position Columns)
         total_income = display_df['Amount'].sum()
         
-        # Calculate Doctors using the SMART column name
-        if doc_col in display_df.columns:
-            tripic_total = display_df[display_df[doc_col].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
-            cartagena_total = display_df[display_df[doc_col].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
-        else:
-            tripic_total = 0
-            cartagena_total = 0
+        # We now use 'Doctor' confidently because we forced the mapping in get_data
+        tripic_total = display_df[display_df['Doctor'].str.contains("Tripic", case=False, na=False)]['Amount'].sum()
+        cartagena_total = display_df[display_df['Doctor'].str.contains("Cartagena", case=False, na=False)]['Amount'].sum()
 
         st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
         
@@ -151,17 +146,25 @@ def main():
         date_range = f"{display_df['Date Object'].min().date()} to {display_df['Date Object'].max().date()}" if not display_df.empty else "-"
         m1.metric("Date Range", date_range)
         
-        # Averages for Doctors
-        if months_divisor > 0:
-            m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}", f"Avg: ${tripic_total/months_divisor:,.2f}/mo")
-            m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}", f"Avg: ${cartagena_total/months_divisor:,.2f}/mo")
-        else:
-            m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}")
-            m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}")
+        avg_text_t = f"Avg: ${tripic_total/months_divisor:,.2f}/mo" if months_divisor > 0 else None
+        avg_text_c = f"Avg: ${cartagena_total/months_divisor:,.2f}/mo" if months_divisor > 0 else None
+        
+        m2.metric("👨‍⚕️ Dr. Tripic", f"${tripic_total:,.2f}", avg_text_t)
+        m3.metric("👩‍⚕️ Dr. Cartagena", f"${cartagena_total:,.2f}", avg_text_c)
 
         st.divider()
         
-        # 5. MOBILE CARD VIEW
+        # 5. DOWNLOAD BUTTON
+        csv = display_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📄 Download Report for Accountant",
+            data=csv,
+            file_name=f"Kitchener_Income.csv",
+            mime="text/csv",
+            type="primary"
+        )
+
+        # 6. MOBILE CARD VIEW
         use_card_view = st.toggle("📱 Mobile Card View", value=True)
         
         if use_card_view:
@@ -169,24 +172,13 @@ def main():
             for index, row in display_df.sort_values(by="Date Object", ascending=False).iterrows():
                 with st.container(border=True):
                     c1, c2 = st.columns([3, 2])
-                    # Uses SMART Column
-                    sender = row.get(sender_col, "Unknown")
-                    c1.write(f"**{sender}**")
-                    
+                    c1.write(f"**{row['Sender']}**")
                     date_str = row['Date Object'].strftime('%Y-%m-%d')
-                    # Uses SMART Column
-                    doc = row.get(doc_col, "Unknown")
-                    c1.caption(f"📅 {date_str} • {doc}")
-                    
-                    amt = row.get('Amount', 0)
-                    c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${amt:,.2f}</h3>", unsafe_allow_html=True)
+                    c1.caption(f"📅 {date_str} • {row['Doctor']}")
+                    c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${row['Amount']:,.2f}</h3>", unsafe_allow_html=True)
         else:
-            # Table View
-            display_cols = ["Date", sender_col, "Amount", doc_col]
-            cols_to_show = [c for c in display_cols if c in display_df.columns]
-            
             st.dataframe(
-                display_df.sort_values(by="Date Object", ascending=False)[cols_to_show], 
+                display_df.sort_values(by="Date Object", ascending=False)[["Date", "Sender", "Amount", "Doctor"]], 
                 use_container_width=True, 
                 hide_index=True
             )
