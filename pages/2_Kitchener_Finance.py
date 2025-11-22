@@ -4,9 +4,11 @@ import pandas as pd
 import json
 from datetime import datetime
 
+# --- CONFIGURATION ---
 SHEET_NAME = 'EMG Payments Kitchener'
 CREDENTIALS_FILE = 'credentials.json'
 
+# --- CONNECT TO GOOGLE ---
 @st.cache_resource
 def get_connection():
     try:
@@ -52,20 +54,27 @@ def main():
 
     if not df.empty:
         # --- SMART COLUMN FINDER ---
-        # We find the actual name of your headers
-        doc_col = 'Doctor' # Default
-        sender_col = 'Sender'
+        # We find the actual name of your headers dynamically
+        doc_col = None
+        sender_col = None
         
         for col in df.columns:
             if "doctor" in col.lower() or "doc" in col.lower():
                 doc_col = col
             if "sender" in col.lower():
                 sender_col = col
+        
+        # Fallback if not found
+        if not doc_col: doc_col = "Doctor"
+        if not sender_col: sender_col = "Sender"
 
         # 1. Clean Data
         df = df[df['Date'].astype(str).str.strip() != ""]
-        df['Date Object'] = pd.to_datetime(df['Date'], errors='coerce')
+        
+        # *** FIX 1: FORCE CANADIAN DATE FORMAT (Day First) ***
+        df['Date Object'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
         df = df.dropna(subset=['Date Object'])
+        
         df['Amount'] = pd.to_numeric(df['Amount'].astype(str).str.replace('$','').str.replace(',',''), errors='coerce')
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
@@ -81,8 +90,11 @@ def main():
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
         view_options = ["Current Year (Overview)", "Last X Months"] + available_months
+        
         current_month_name = datetime.now().strftime('%B')
-        default_idx = view_options.index(current_month_name) if current_month_name in view_options else 0
+        default_idx = 0
+        if current_month_name in view_options:
+            default_idx = view_options.index(current_month_name)
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
         # 3. Logic
@@ -110,6 +122,7 @@ def main():
         tripic_total = 0
         cartagena_total = 0
         
+        # Use the actual column name we found earlier
         if doc_col in display_df.columns:
             tripic_total = display_df[display_df[doc_col].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
             cartagena_total = display_df[display_df[doc_col].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
@@ -153,9 +166,11 @@ def main():
                     amt = row.get('Amount', 0)
                     c2.markdown(f"<h3 style='text-align: right; color: #4CAF50; margin: 0;'>${amt:,.2f}</h3>", unsafe_allow_html=True)
         else:
-            # Display whatever columns we found
+            # *** FIX 2: USE ACTUAL COLUMN NAMES IN TABLE ***
+            # We use the variables doc_col and sender_col that we found earlier
             display_cols = ["Date", sender_col, "Amount", doc_col]
-            # Ensure they exist
+            
+            # Ensure they exist in the dataframe before asking to display them
             final_cols = [c for c in display_cols if c in display_df.columns]
             
             st.dataframe(
