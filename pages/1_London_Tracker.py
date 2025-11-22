@@ -61,13 +61,7 @@ def main():
 
     if not df.empty:
         # 1. CLEAN DATA
-        # Robust Name Finder (Checks for 'name', 'Name', 'Patient Name', 'Patient')
-        name_col = 'name' # Default fallback
-        for col in df.columns:
-            if "name" in col.lower() or "patient" in col.lower():
-                name_col = col
-                break
-        
+        name_col = 'name' if 'name' in df.columns else 'Name'
         if name_col in df.columns:
             df = df[df[name_col].astype(str).str.strip() != ""]
         
@@ -96,7 +90,7 @@ def main():
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
         
-        # --- SIDEBAR ---
+        # --- SIDEBAR: FILTERS ---
         st.sidebar.header("📅 Time Filters")
         available_years = sorted(df['Year'].unique(), reverse=True)
         selected_year = st.sidebar.selectbox("Select Year", available_years)
@@ -115,8 +109,16 @@ def main():
             
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
+        # --- SIDEBAR: GOAL TRACKER (Feature C5) ---
+        st.sidebar.divider()
+        st.sidebar.header("🎯 Goal Tracker")
+        monthly_goal = st.sidebar.number_input("Monthly Goal ($)", value=10000, step=500)
+
         # LOGIC
+        months_back = 0
         months_divisor = 0
+        target_income = 0
+
         if selected_view == "Last X Months":
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
             if period_opt == "Custom":
@@ -129,25 +131,43 @@ def main():
             display_df = df[df['Date Object'] >= start_date]
             view_title = f"Income: Last {months_back} Months"
             months_divisor = months_back
-            
+            target_income = monthly_goal * months_back
+
         elif selected_view == "Current Year (Overview)":
             current_year = datetime.now().year
             display_df = df[df['Year'] == current_year]
             view_title = f"Financial Overview: {current_year}"
+            
+            # YoY Logic
+            prev_year = current_year - 1
+            prev_year_df = df[df['Year'] == prev_year]
+            current_total = display_df['Fee'].sum()
+            prev_total = prev_year_df['Fee'].sum()
+            
+            metric_delta = None
+            if prev_total > 0:
+                delta_val = current_total - prev_total
+                delta_pct = (delta_val / prev_total) * 100
+                metric_delta = f"{delta_pct:,.1f}% vs {prev_year}"
+
             if selected_year == current_year:
                 months_divisor = datetime.now().month
             else:
                 months_divisor = 12
+            
+            target_income = monthly_goal * 12
+            
         else:
             display_df = df[df['Month_Name'] == selected_view]
-            view_title = f"Activity in {selected_view}"
+            view_title = f"Details for {selected_view}"
             months_divisor = 0
+            target_income = monthly_goal
+            metric_delta = None
 
         # --- METRICS ---
         total_period_income = display_df['Fee'].sum()
         total_patients = len(display_df)
 
-        # TITLE STYLE MATCHING KITCHENER
         st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
         
         if months_divisor > 0:
@@ -156,19 +176,27 @@ def main():
         else:
             st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_period_income:,.2f}</h1>", unsafe_allow_html=True)
 
+        # GOAL PROGRESS
+        if target_income > 0:
+            progress = min(total_period_income / target_income, 1.0)
+            st.progress(progress, text=f"🎯 Goal Progress: {int(progress*100)}% of ${target_income:,.0f}")
+
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total Patients", f"{total_patients}")
+        if metric_delta:
+            m1.metric("Total London Income", f"${total_period_income:,.2f}", delta=metric_delta)
+        else:
+            m1.metric("Total London Income", f"${total_period_income:,.2f}")
+            
+        m2.metric("Total Patients", f"{total_patients}")
         
         if total_patients > 0:
-            m2.metric("Avg per Patient", f"${total_period_income/total_patients:,.2f}")
+            m3.metric("Avg per Patient", f"${total_period_income/total_patients:,.2f}")
         else:
-            m2.metric("Avg per Patient", "$0.00")
-            
-        m3.metric("Date Range", f"{display_df['Date Object'].min().date()} to {display_df['Date Object'].max().date()}" if not display_df.empty else "-")
+            m3.metric("Avg per Patient", "$0.00")
 
         st.divider()
 
-        # If specific month, show pay periods (Like Kitchener style)
+        # If specific month, show pay periods
         if months_divisor == 0: 
              period_1 = display_df[display_df['Date Object'].dt.day <= 15]
              period_2 = display_df[display_df['Date Object'].dt.day > 15]
@@ -177,6 +205,16 @@ def main():
              c1.metric("🗓️ 1st - 15th", f"${period_1['Fee'].sum():,.2f}", f"{len(period_1)} patients")
              c2.metric("🗓️ 16th - End", f"${period_2['Fee'].sum():,.2f}", f"{len(period_2)} patients")
              st.divider()
+
+        # --- DOWNLOAD BUTTON (Feature D3) ---
+        csv = display_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📄 Download Report for Accountant",
+            data=csv,
+            file_name=f"London_Income_{selected_year}.csv",
+            mime="text/csv",
+            type="primary"
+        )
 
         # --- MOBILE CARD VIEW ---
         use_card_view = st.toggle("📱 Mobile Card View", value=True)
@@ -187,9 +225,7 @@ def main():
                 with st.container(border=True):
                     c1, c2 = st.columns([3, 2])
                     
-                    # SMART NAME FINDER
-                    # We use the name_col we found earlier
-                    patient_name = row.get(name_col, "Unknown Patient")
+                    patient_name = row.get(name_col, "Patient")
                     c1.write(f"**{str(patient_name)}**")
                     
                     encounter_type = str(row.get("Type of encounter", "Unknown"))
@@ -204,13 +240,11 @@ def main():
                         if "finalized" in col.lower():
                             finalized_col = col
                             break
-                    
                     if finalized_col:
                         status = str(row[finalized_col]).strip()
                         if status and status.lower() != "yes":
                             st.caption(f"⚠️ Report: {status}")
         else:
-            # Table View
             potential_cols = [date_col, name_col, "Type of encounter", "Fee", "finalized report ?", "Doctor"]
             final_cols = [c for c in potential_cols if c in display_df.columns]
             st.dataframe(
