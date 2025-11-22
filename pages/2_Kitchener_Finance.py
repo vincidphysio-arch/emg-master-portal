@@ -62,10 +62,14 @@ def main():
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
 
-        # --- SIDEBAR: TIME FILTERS ---
+        # --- SIDEBAR ---
         st.sidebar.header("📅 Time Filters")
         
-        available_months = list(df['Month_Name'].unique())
+        available_years = sorted(df['Year'].unique(), reverse=True)
+        selected_year = st.sidebar.selectbox("Select Year", available_years)
+        year_df = df[df['Year'] == selected_year]
+
+        available_months = list(year_df['Month_Name'].unique())
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
@@ -100,7 +104,6 @@ def main():
             view_title = f"Income: Last {months_back} Months"
             
         else:
-            # Specific Month
             display_df = df[df['Month_Name'] == selected_view]
             view_title = f"Activity in {selected_view}"
 
@@ -109,9 +112,15 @@ def main():
         tripic_total = display_df[display_df['Doctor'].astype(str).str.contains("Tripic", case=False)]['Amount'].sum()
         cartagena_total = display_df[display_df['Doctor'].astype(str).str.contains("Cartagena", case=False)]['Amount'].sum()
 
-        # TITLES
+        # TITLES & CALCULATIONS
         st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
-        st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_income:,.2f}</h1>", unsafe_allow_html=True)
+        
+        # *** NEW LOGIC: Show Average ONLY for "Last X Months" ***
+        if selected_view == "Last X Months" and months_back > 0:
+            monthly_avg = total_income / months_back
+            st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_income:,.2f} <span style='font-size: 0.6em; color: gray;'> (Avg: ${monthly_avg:,.2f}/mo)</span></h1>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<h1 style='text-align: center; color: #4CAF50;'>Total: ${total_income:,.2f}</h1>", unsafe_allow_html=True)
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Date Range", f"{display_df['Date Object'].min().date()} to {display_df['Date Object'].max().date()}" if not display_df.empty else "-")
