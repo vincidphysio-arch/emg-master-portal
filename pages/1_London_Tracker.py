@@ -44,6 +44,7 @@ def main():
         
     st.title("🏙️ London, ON Patient Tracker")
 
+    # --- DOCTOR SELECTOR ---
     st.sidebar.header("👨‍⚕️ Select Doctor")
     selected_doc_name = st.sidebar.selectbox("Choose Dashboard:", list(DOCTOR_SHEETS.keys()))
     target_sheet = DOCTOR_SHEETS[selected_doc_name]
@@ -90,13 +91,10 @@ def main():
         df['Year'] = df['Date Object'].dt.year
         df['Month_Name'] = df['Date Object'].dt.strftime('%B')
         
-        # --- SIDEBAR ---
+        # --- SIDEBAR: TIME FILTERS ---
         st.sidebar.header("📅 Time Filters")
-        available_years = sorted(df['Year'].unique(), reverse=True)
-        selected_year = st.sidebar.selectbox("Select Year", available_years)
-        year_df = df[df['Year'] == selected_year]
-
-        available_months = list(year_df['Month_Name'].unique())
+        
+        available_months = list(df['Month_Name'].unique())
         month_order = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
         available_months.sort(key=lambda x: month_order.index(x) if x in month_order else 99, reverse=True)
         
@@ -110,8 +108,9 @@ def main():
         selected_view = st.sidebar.selectbox("Select View", view_options, index=default_idx)
 
         # LOGIC FOR MONTHS BACK
+        months_back = 0
         months_divisor = 0
-        
+
         if selected_view == "Last X Months":
             period_opt = st.sidebar.radio("Select Duration", [3, 6, 9, 12, "Custom"], horizontal=True)
             if period_opt == "Custom":
@@ -124,18 +123,15 @@ def main():
             display_df = df[df['Date Object'] >= start_date]
             view_title = f"Income: Last {months_back} Months"
             months_divisor = months_back
-            
+
         elif selected_view == "Current Year (Overview)":
             current_year = datetime.now().year
             display_df = df[df['Year'] == current_year]
             view_title = f"Financial Overview: {current_year}"
-            
-            if selected_year == current_year:
-                months_divisor = datetime.now().month
-            else:
-                months_divisor = 12
+            months_divisor = datetime.now().month # Divide by months passed so far
             
         else:
+            # Specific Month
             display_df = df[df['Month_Name'] == selected_view]
             view_title = f"Details for {selected_view}"
             months_divisor = 0
@@ -144,7 +140,7 @@ def main():
         total_period_income = display_df['Fee'].sum()
         total_patients = len(display_df)
 
-        # TITLES
+        # TITLES (RED & GREEN with AVG)
         st.markdown(f"<h2 style='text-align: center; color: #FF4B4B;'>{view_title}</h2>", unsafe_allow_html=True)
         
         if months_divisor > 0:
@@ -156,7 +152,6 @@ def main():
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Patients", f"{total_patients}")
         
-        # AVG per Patient
         if total_patients > 0:
             m2.metric("Avg per Patient", f"${total_period_income/total_patients:,.2f}")
         else:
@@ -167,7 +162,7 @@ def main():
         st.divider()
 
         # If specific month, show pay periods
-        if months_divisor == 0: # Means specific month
+        if months_divisor == 0: 
              period_1 = display_df[display_df['Date Object'].dt.day <= 15]
              period_2 = display_df[display_df['Date Object'].dt.day > 15]
              
