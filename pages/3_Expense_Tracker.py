@@ -18,7 +18,7 @@ if "GEMINI_API_KEY" in st.secrets:
 def analyze_receipt(image):
     # Use the specific, stable Flash model
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = """
         Analyze this receipt image. Return ONLY a raw JSON object with these fields:
         {
