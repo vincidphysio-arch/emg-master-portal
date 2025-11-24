@@ -14,8 +14,9 @@ def get_google_sheet_df(sheet_name, worksheet_name):
     df = pd.DataFrame(data[1:], columns=headers)
     return df
 
-SHEET_NAME = "London Encounters"      # <--- Update to your Google sheet name
-WORKSHEET_NAME = "Tracker"            # <--- Update to your worksheet/tab name
+# CHANGE THESE for each dashboard:
+SHEET_NAME = "London Encounters"      # <-- update as needed per file
+WORKSHEET_NAME = "Tracker"            # <-- update per dashboard/tab
 
 st.title("London Tracker Dashboard")
 if st.button("Refresh Data"):
