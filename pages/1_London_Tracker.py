@@ -14,10 +14,10 @@ def get_google_sheet_df(sheet_name, worksheet_name):
     df = pd.DataFrame(data[1:], columns=headers)
     return df
 
-SHEET_NAME = "London Encounters"      # <--- Your sheet name
-WORKSHEET_NAME = "Tracker"            # <--- Your worksheet/tab name
+SHEET_NAME = "London Encounters"      # <--- Update to your Google sheet name
+WORKSHEET_NAME = "Tracker"            # <--- Update to your worksheet/tab name
 
-st.title('London Tracker Dashboard')
+st.title("London Tracker Dashboard")
 if st.button("Refresh Data"):
     st.cache_data.clear()
     st.rerun()
@@ -25,8 +25,9 @@ if st.button("Refresh Data"):
 df = get_google_sheet_df(SHEET_NAME, WORKSHEET_NAME)
 st.dataframe(df)
 
-csv = df.to_csv(index=False).encode('utf-8')
+csv = df.to_csv(index=False).encode("utf-8")
 st.download_button("Download CSV", csv, "LondonTracker.csv", "text/csv")
+
 buffer = io.BytesIO()
 df.to_excel(buffer, index=False)
 buffer.seek(0)
