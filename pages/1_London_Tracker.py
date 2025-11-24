@@ -1,33 +1,33 @@
 import streamlit as st
 import gspread
 import pandas as pd
+import json
 import io
 
-SHEET_NAME = 'London Encounters'         # <<-- Put your actual Sheet name here
-WORKSHEET_NAME = 'Tracker'               # <<-- Put your actual Worksheet name here
-CREDENTIALS_FILE = 'credentials.json'
-
-def get_google_sheet_df(sheet, worksheet, cred):
-    gc = gspread.service_account(filename=cred)
-    sh = gc.open(sheet)
-    ws = sh.worksheet(worksheet)
-    data = ws.get_all_values()
+def get_google_sheet_df(sheet_name, worksheet_name):
+    creds_dict = json.loads(st.secrets["gcpjson"])
+    gc = gspread.service_account_from_dict(creds_dict)
+    sh = gc.open(sheet_name)
+    worksheet = sh.worksheet(worksheet_name)
+    data = worksheet.get_all_values()
     headers = data[0]
     df = pd.DataFrame(data[1:], columns=headers)
     return df
+
+SHEET_NAME = "London Encounters"      # <--- Your sheet name
+WORKSHEET_NAME = "Tracker"            # <--- Your worksheet/tab name
 
 st.title('London Tracker Dashboard')
 if st.button("Refresh Data"):
     st.cache_data.clear()
     st.rerun()
 
-df = get_google_sheet_df(SHEET_NAME, WORKSHEET_NAME, CREDENTIALS_FILE)
+df = get_google_sheet_df(SHEET_NAME, WORKSHEET_NAME)
 st.dataframe(df)
 
 csv = df.to_csv(index=False).encode('utf-8')
-st.download_button("Download CSV Backup", csv, "LondonTracker.csv", "text/csv")
-
+st.download_button("Download CSV", csv, "LondonTracker.csv", "text/csv")
 buffer = io.BytesIO()
 df.to_excel(buffer, index=False)
 buffer.seek(0)
-st.download_button("Download Excel Backup", buffer, "LondonTracker.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+st.download_button("Download Excel", buffer, "LondonTracker.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
